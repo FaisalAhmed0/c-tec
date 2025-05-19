@@ -77,6 +77,32 @@ class SA_encoder(nn.Module):
                 x = x / jnp.exp(self.log_temperature)
         return x
     
+class S_encoder(nn.Module):
+    '''
+    State action encoder
+    '''
+    args: object
+
+    def setup(self):
+        # Initialize the temperature parameter (starting with 1.0, can be adjusted)
+        self.log_temperature = self.param('temperature', lambda key: jnp.zeros(()))
+
+    @nn.compact
+    def __call__(self, s , a, key, augment=False, train=False):
+        args = self.args
+        x = s
+        layer_sizes = [args.contrastive_hidden_dim]*args.contrastive_number_hiddens + [args.repr_dim]
+        encoder = CRL_MLP(layer_sizes, args.layer_norm_crl, eval(args.activation), spectral_norm=args.spectral_norm)
+        x = encoder(x, train=train)
+        # if enabled, normalize the representations
+        if args.normalize_repr:
+            x = x / (jnp.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
+            if args.fix_temp:
+                x = x / args.temp_value
+            else:
+                x = x / jnp.exp(self.log_temperature)
+        return x
+    
 
 class G_encoder(nn.Module):
     '''
@@ -128,7 +154,7 @@ class Aptcritic(nn.Module):
     def setup(self):
         args = self.args
     
-        self.obs_encoder = SA_encoder(args)
+        self.obs_encoder = S_encoder(args)
 
     def __call__(self, obs, action, obs_aug,key, augment=False, train=True):
         args = self.args

@@ -167,3 +167,47 @@ def make_contrastive_critic_loss(crl_networks, args):
         return critic_loss, metrics
     return critic_loss
 
+
+### APT loss
+def make_apt_loss(crl_networks, args: object): 
+    critic_network = crl_networks.critic_network
+    def critic_loss(critic_params, transitions, key):
+        obs = transitions.observation[:, args.crl_goal_indices]
+        action = transitions.action * 0 # zero the action out, APT learn only state representations
+        obs_aug = obs + (jax.random.normal(key, shape=obs.shape) * 0.3)
+
+        s_repr, s_aug_repr, log_temp = critic_network.apply(critic_params, obs, action, obs_aug,  key, args.da)
+
+        ################ Energy function ################
+        similarity_method = {
+            "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1)),
+            "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1),
+            "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr[:, None, :] - g_repr[None, :, :]), axis=-1),
+            "dot": lambda sa_repr, g_repr: jnp.einsum("ik,jk->ij", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
+        }
+        ################ Energy function ################
+        logits = similarity_method[args.energy_fn](s_repr, s_aug_repr)
+        ################ Contrastive losses ################
+        critic_loss = contrastive_losses()[args.contr_loss](logits)
+        ################ Contrastive losses ################
+
+        I = jnp.eye(logits.shape[0])
+        correct = jnp.argmax(logits, axis=1) == jnp.argmax(I, axis=1)
+        logits_pos = jnp.sum(logits * I) / jnp.sum(I)
+        logits_neg = jnp.sum(logits * (1 - I)) / jnp.sum(1 - I)
+        logits_mean = logits.mean(axis=-1).mean()
+        logits_std = logits.std(axis=-1).mean()
+
+        # import pdb;pdb.set_trace()
+        metrics = {
+            "categorical_accuracy": jnp.mean(correct),
+            "logits_pos": logits_pos,
+            "logits_neg": logits_neg,
+            "logits_mean":logits_mean,
+            "logits_std": logits_std,
+            "critic_loss": critic_loss,
+            "temparture": jax.lax.stop_gradient(jnp.exp(log_temp))
+        }
+        return critic_loss, metrics
+    return critic_loss
+

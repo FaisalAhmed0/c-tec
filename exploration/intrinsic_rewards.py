@@ -26,3 +26,21 @@ def crl_reward(contrastive_network, contrastive_params, transition: Transition, 
     sm = similarity_method[args.energy_fn](sa_repr, g_repr)
     reward = -sm
     return  jax.lax.stop_gradient(reward)
+
+
+def apt_reward(contrastive_network, contrastive_params, transition: Transition, args, key_critic):
+    state = transition.observation[:, :, args.crl_goal_indices]
+    action = transition.action * 0 # zero the action out, apt learns only state representations
+
+    s_repr, _, _ = contrastive_network.apply(contrastive_params, state, action, state, key_critic, args.da, train=False)
+    
+    k = 12
+    dists = jnp.sum((s_repr[:, :, None, :] - s_repr[:, None, :, :]) ** 2, axis=-1)
+
+    sorted_dists = jnp.sort(dists, axis=-1)
+
+    knn_dists = sorted_dists[:, :, 1:k+1]  # First distance is to the point itself, so skip it
+    mean_knn_dists = jnp.mean(knn_dists, axis=-1)  # Mean distance to k nearest neighbors
+    reward = mean_knn_dists
+    
+    return  jax.lax.stop_gradient(reward)

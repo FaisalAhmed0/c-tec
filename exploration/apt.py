@@ -16,7 +16,7 @@ import functools
 import model_utils as sac_networks
 import math
 
-from args import CTEC_args
+from args import APT_args
 from absl import logging
 from copy import deepcopy
 from typing import Any, Tuple, TypeVar,Union, NamedTuple, Sequence
@@ -40,10 +40,10 @@ from utils import MetricsRecorder, create_env, create_eval_env,\
       DiscretizedDensity, Simple_CSV_logger, get_env_config, \
         knn_average_distance, render, gamma_schedule, \
         load_params, save_params, save_args, save_buffer_sample
-from intrinsic_rewards import crl_reward
+from intrinsic_rewards import apt_reward
 from buffers import TrajectoryUniformSamplingQueue
-from losses import make_contrastive_critic_loss as make_contrastive_loss
-from models import ContrastiveCritic
+from losses import make_apt_loss as make_contrastive_loss
+from models import Aptcritic
 from wonderwords import RandomWord
 
 
@@ -249,7 +249,7 @@ def main(args):
         args.crl_observation_dim = env.state_dim if args.use_complete_future_state else env.goal_indices.shape[-1]
 
     # Make the contrastive critic
-    contrastive_network = ContrastiveCritic(args)
+    contrastive_network =  Aptcritic(args)
     contrastive_optimizer = optax.adam(learning_rate=args.critic_lr)
     
     # create the transition object
@@ -361,7 +361,7 @@ def main(args):
         policy_optimizer_state = policy_optimizer.init(policy_params)
         q_params = sac_network.q_network.init(key_q)
         q_optimizer_state = q_optimizer.init(q_params)
-        contrastive_params = contrastive_network.init(key_contrastive, dummy_state, dummy_action, dummy_future_state, key_contrastive, False)
+        contrastive_params = contrastive_network.init(key_contrastive, dummy_future_state, dummy_action, dummy_future_state, key_contrastive, False)
         contrastive_optimizer_state = contrastive_optimizer.init(contrastive_params)
 
         normalizer_params = running_statistics.init_state(specs.Array((obs_size,), jnp.dtype("float32")))
@@ -600,7 +600,7 @@ def main(args):
             transitions,
         )
 
-        crl_rewards = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
+        crl_rewards = apt_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
         transitions = transitions._replace(
             reward=crl_rewards
         )
@@ -890,5 +890,5 @@ def main(args):
     brax_pmap.synchronize_hosts()
     
 if __name__ == "__main__":
-    args = tyro.cli(CTEC_args)
+    args = tyro.cli(APT_args)
     main(args)
