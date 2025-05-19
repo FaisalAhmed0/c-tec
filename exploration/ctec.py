@@ -7,28 +7,21 @@ import tyro
 import time
 import optax
 import wandb
-import pickle
 import random
 import wandb_osh
 import numpy as np
 import flax.linen as nn
 import jax.numpy as jnp
-import json
 import functools
 import model_utils as sac_networks
 import math
-import csv_logger
 
+from args import CTEC_Args
 from absl import logging
 from copy import deepcopy
-from etils import epath
-from dataclasses import dataclass 
-from collections import namedtuple
-from typing import Any, Generic, Tuple, TypeVar,Union, Generic, NamedTuple, Sequence
+from typing import Any, Tuple, TypeVar,Union, NamedTuple, Sequence
 from wandb_osh.hooks import TriggerWandbSyncHook
-from flax.training.train_state import TrainState
-from flax.linen.initializers import variance_scaling
-from evaluator import CrlEvaluator, ActorCrlEvaluator
+from evaluator import ActorCrlEvaluator
 
 from brax.training.acme import specs
 from brax.training.acme import running_statistics
@@ -43,10 +36,12 @@ from brax.training import gradients
 from brax.training.types import PRNGKey
 from brax.v1 import envs as envs_v1
 from brax.io import model
-
-from utils import MetricsRecorder, create_env, create_eval_env, DiscretizedDensity, Simple_CSV_logger, get_env_config, knn_average_distance, render
-
-from buffers import QueueBase
+from utils import MetricsRecorder, create_env, create_eval_env,\
+      DiscretizedDensity, Simple_CSV_logger, get_env_config, \
+        knn_average_distance, render, gamma_schedule, \
+        load_params, save_params, save_args, save_buffer_sample
+from intrinsic_rewards import crl_reward
+from buffers import TrajectoryUniformSamplingQueue
 from losses import make_contrastive_critic_loss as make_contrastive_loss
 from models import ContrastiveCritic
 from wonderwords import RandomWord
@@ -55,143 +50,8 @@ from wonderwords import RandomWord
 
 Metrics = types.Metrics
 
-@dataclass
-class Args:
-    exp_name: str = os.path.basename(__file__)[: -len(".py")]
-    seed: int = np.random.randint(2**31)
-    torch_deterministic: bool = True
-    cuda: bool = True
-    track: bool = False
-    wandb_project_name: str = "exploration"
-    wandb_entity: str = None
-    wandb_mode: str = 'online'
-    wandb_dir: str = '.'
-    wandb_group: str = '.'
-    capture_video: bool = False
-    checkpoint: bool = True
-    run_name_suffix: str = ""
-    num_videos: int = 30
-
-    #environment specific arguments
-    env_name: str = "ant_hardest_maze"
-    episode_length: int = 1000
-    # to be filled in runtime
-    obs_dim: int = 0
-    goal_start_idx: int = 0
-    goal_end_idx: int = 0
-
-    # Algorithm specific arguments
-    num_timesteps: int = 10_000_000
-    num_epochs: int = 50
-    num_envs: int = 512
-    num_eval_envs: int = 5
-    actor_lr: float = 3e-4
-    critic_lr: float = 3e-4
-    alpha_lr: float = 3e-4
-    rnd_lr: float = 3e-4
-    batch_size: int = 256
-    discounting: float = 0.99
-    use_dense_reward: bool = False
-    tau = 0.005
-    logsumexp_penalty_coeff: float = 0.1
-    entropy_reg: bool = True
-
-    max_replay_size: int = 10000
-    min_replay_size: int = 1000
-    agent_number_hiddens: int = 2
-    agent_hidden_dim: int = 256
-    
-    unroll_length: int  = 62
-    reward_scaling: float = 1.0
-    use_her: bool = False
-    """Use hindsight experince replay"""
-    multiplier_num_sgd_steps: int = 1
-    deterministic_eval: bool = False
-    action_repeat: int = 1
-    num_evals: int = 50
-    backend: str = None
-    eval_env: str = None
-    render_agent: bool = False
-    include_goal_in_obs: bool = True
-    rnd_number_hiddens: int = 2
-    rnd_hidden_dim: int = 256
-    rnd_embed_dim: int = 512
-    rnd_observation_dim: int = 0 # to be specified at run_time
-    layer_norm: bool = False
-    agent_activation: str = "nn.relu"
-    activation: str = "nn.relu"
-    rnd_reward_rms: bool = False
-    # to be filled in runtime
-    env_steps_per_actor_step : int = 0
-    """number of env steps per actor step (computed in runtime)"""
-    num_prefill_env_steps : int = 0
-    """number of env steps to fill the buffer before starting training (computed in runtime)"""
-    num_prefill_actor_steps : int = 0
-    """number of actor steps to fill the buffer before starting training (computed in runtime)"""
-    num_training_steps_per_epoch : int = 0
-    """the number of training steps per epoch(computed in runtime)"""
-    render_freq: int = 12*5
-    rnd_observation_dim: int = 0
-    rnd_goal_indices: object = None
-
-    ## CRL related params
-    crl_goal_indices: object = None
-    crl_observation_dim: int = 0 # if > 0 use for debugging
-    use_complete_future_state: bool = False
-    crl_observation_dim: int = 0 # if > 0 use for debugging
-    crl_goal_indices: object = None
-    noise_std: float = 0.1
-    da: bool = False
-    sa_projector: bool = False
-    g_projector: bool = False
-    fix_temp: bool = False
-    temp_value:float = 1
-    spectral_norm: bool = False
-    use_diag_q: bool = False
-    logsumexp_penalty_coeff: float = 0.1
-    l2_penalty_coeff: float = 0.0
-    random_goals: float = 0.0 # poportion of random goals in the actor loss
-    energy_fn: str = "l1"
-    contr_loss: str = "infonce"
-    repr_dim: int = 64
-    normalize_repr: bool = True
-    temp_scaling: bool = True
-    model: str = "crl_sac"
-    contrastive_number_hiddens: int = 2
-    contrastive_hidden_dim: int = 256
-    use_deep_encoder: bool = False
-    discounting_cl: float = 0.99
-    layer_norm_crl: bool = False
-    future_state_rwd_sampling: str = "geometric"
-    gamma_schedule: str = None
-    gamma_schedule_start: float = 0.1
-    gamma_schedule_end: float = 1.0
-    save_all_crl_ckpts: bool = False
-    ema: float=0.999
-    save_replay_data: bool = False
-
 ReplayBufferState = Any
 _PMAP_AXIS_NAME = "i"
-
-
-
-
-
-def gamma_schedule(args, current_timestep, total_timesteps):
-    if args.gamma_schedule == "linear":
-        frac = 1.0 - (current_timestep - 1.0) / total_timesteps
-        gamma = frac * args.gamma_schedule_start + (1.0 - frac) * args.gamma_schedule_end
-        args.discounting_cl = gamma
-        return gamma
-    elif args.gamma_schedule == "exponential":
-        # Exponential decay: gamma = start * (end/start)^(t/T)
-        t = current_timestep - 1.0
-        T = total_timesteps
-        gamma = args.gamma_schedule_start * (args.gamma_schedule_end / args.gamma_schedule_start) ** (t/T)
-        args.discounting_cl = gamma
-        return gamma
-    else:
-        return args.discounting_cl
 
 
 
@@ -200,122 +60,6 @@ Env = Union[envs.Env, envs_v1.Env, envs_v1.Wrapper]
 State = Union[envs.State, envs_v1.State]
 Transition = types.Transition
 Sample = TypeVar("Sample")
-
-def make_csv_logger(csv_path, header):
-    log_level = ['logs_a']
-    logger_ = csv_logger.CsvLogger(
-        filename=csv_path,
-        delimiter=',',
-        level=logging.INFO,
-        add_level_names=log_level,
-        max_size=1e+9,
-        add_level_nums=None,
-        header=header,
-    )
-    return logger_
-
-def actor_step(
-    env: Env,
-    env_state: State,
-    policy: Policy,
-    key: PRNGKey,
-    extra_fields: Sequence[str] = (),
-) -> Tuple[State, Transition]:
-    """Collect data."""
-    # print(env_fstate.obs.shape)
-    # input()
-    actions, policy_extras = policy(env_state.obs, key)
-    nstate = env.step(env_state, actions)
-    state_extras = {x: nstate.info[x] for x in extra_fields}
-    return nstate, Transition(  # pytype: disable=wrong-arg-types  # jax-ndarray
-        observation=env_state.obs,
-        action=actions,
-        reward=nstate.reward,
-        discount=1 - nstate.done,
-        next_observation=nstate.obs,
-        extras={"policy_extras": policy_extras, "state_extras": state_extras},
-    )
-
-def actor_step_render(
-    env: Env,
-    env_state: State,
-    policy: Policy,
-    key: PRNGKey,
-    extra_fields: Sequence[str] = (),
-) -> Tuple[State, Transition]:
-    """Collect data."""
-    actions, policy_extras = policy(env_state.obs[None, :], key)
-    nstate = env.step(env_state, actions)
-    state_extras = {x: nstate.info[x] for x in extra_fields}
-    return nstate, Transition(  # pytype: disable=wrong-arg-types  # jax-ndarray
-        observation=env_state.obs,
-        action=actions,
-        reward=nstate.reward,
-        discount=1 - nstate.done,
-        next_observation=nstate.obs,
-        extras={"policy_extras": policy_extras, "state_extras": state_extras},
-    )
-
-# utility functions for RND
-def normalize(arr: jax.Array, mean: jax.Array, std: jax.Array, eps: float = 1e-8) -> jax.Array:
-    return jnp.clip((arr - mean) / (std + eps), -5., 5.)
-
-
-def crl_reward(contrastive_network, contrastive_params, transition: Transition, args, key_critic):
-    state = transition.observation[:, :, :args.obs_dim]
-    action = transition.action
-    future_state = transition.extras["future_state_for_rwd"]
-    future_reward = transition.extras["future_reward"]
-    
-
-    # import pdb;pdb.set_trace()
-
-    random_goal_mask = jax.random.bernoulli(key_critic, args.random_goals, shape=(future_state.shape[0], 1, 1))
-    future_rolled = jnp.roll(future_state, 1, axis=0)
-    future_state = jnp.where(random_goal_mask, future_rolled, future_state)
-
-    goal = future_state[:, :, args.crl_goal_indices]
-    
-
-    
-    
-    sa_repr, g_repr, _ = contrastive_network.apply(contrastive_params, state, action, goal, key_critic, args.da, train=False)
-
-    similarity_method = {
-            "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr - g_repr) ** 2, axis=-1)),
-            "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr - g_repr) ** 2, axis=-1),
-            "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr - g_repr), axis=-1),
-            "dot": lambda sa_repr, g_repr: jnp.einsum("hik,hik->hi", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
-        }
-    # import pdb;pdb.set_trace()
-    sm = similarity_method[args.energy_fn](sa_repr, g_repr)
-    # reward = -sm.mean(axis=-1)
-    reward = -sm
-    # import pdb;pdb.set_trace()
-    return  jax.lax.stop_gradient(reward)
-    
-
-# Jax RMS
-class RMS:
-    """Running mean and standard deviation."""
-    def __init__(self, epsilon=1e-4, shape=(1,)):
-        self.M = jnp.zeros(shape)
-        self.S = jnp.ones(shape)
-        self.n = epsilon
-
-    def __call__(self, x):
-        bs = x.shape[0]
-        delta = jnp.mean(x, axis=0) - self.M
-        new_M = self.M + delta * bs / (self.n + bs)
-        new_S = (self.S * self.n + jnp.var(x, axis=0) * bs +
-                 jnp.square(delta) * self.n * bs /
-                 (self.n + bs)) / (self.n + bs)
-
-        self.M = new_M
-        self.S = new_S
-        self.n += bs
-
-        return self.M, self.S
 
 
 
@@ -349,174 +93,31 @@ class Transition(NamedTuple):
     discount: NestedArray
     extras: NestedArray = ()  # pytype: disable=annotation-type-mismatch  # jax-ndarray
 
+@flax.struct.dataclass
+class CRLNetworks:
+    critic_network: nn.Module
 
-class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
-    """Implements an uniform sampling limited-size replay queue BUT WITH TRAJECTORIES."""
-
-    def sample_internal(self, buffer_state: ReplayBufferState) -> Tuple[ReplayBufferState, Sample]:
-        if buffer_state.data.shape != self._data_shape:
-            raise ValueError(
-                f"Data shape expected by the replay buffer ({self._data_shape}) does "
-                f"not match the shape of the buffer state ({buffer_state.data.shape})"
-            )
-        key, sample_key, shuffle_key = jax.random.split(buffer_state.key, 3)
-        # NOTE: this is the number of envs to sample but it can be modified if there is OOM
-        shape = self.num_envs
-
-        # Sampling envs idxs
-        envs_idxs = jax.random.choice(sample_key, jnp.arange(self.num_envs), shape=(shape,), replace=False)
-
-        @functools.partial(jax.jit, static_argnames=("rows", "cols"))
-        def create_matrix(rows, cols, min_val, max_val, rng_key):
-            rng_key, subkey = jax.random.split(rng_key)
-            start_values = jax.random.randint(subkey, shape=(rows,), minval=min_val, maxval=max_val)
-            row_indices = jnp.arange(cols)
-            matrix = start_values[:, jnp.newaxis] + row_indices
-            return matrix
-
-        @jax.jit
-        def create_batch(arr_2d, indices):
-            return jnp.take(arr_2d, indices, axis=0, mode="wrap")
-
-        create_batch_vmaped = jax.vmap(create_batch, in_axes=(1, 0))
-
-        matrix = create_matrix(
-            shape,
-            self.episode_length,
-            buffer_state.sample_position,
-            buffer_state.insert_position - self.episode_length,
-            sample_key,
-        )
-
-        batch = create_batch_vmaped(buffer_state.data[:, envs_idxs, :], matrix)
-        transitions = self._unflatten_fn(batch)
-        return buffer_state.replace(key=key), transitions
-
-    @staticmethod
-    @functools.partial(jax.jit, static_argnames=["config", "env", "apply_fn"])
-    def flatten_crl_fn(config, env, transition: Transition, sample_key: PRNGKey, goal_indicies, contrastive_params, apply_fn) -> Transition:
-        goal_key, transition_key = jax.random.split(sample_key)
-        
-        # Because it's vmaped transition obs.shape is of shape (transitions,obs_dim)
-        seq_len = transition.observation.shape[0]
-        arrangement = jnp.arange(seq_len)
-        is_future_mask = jnp.array(arrangement[:, None] < arrangement[None], dtype=jnp.float32)
-        discount = config.discounting_cl ** jnp.array(arrangement[None] - arrangement[:, None], dtype=jnp.float32)
-
-        # Sample goal indices for computing the contrastive reward
-        if config.future_state_rwd_sampling == "geometric":
-            print("sample from the geometric distribution")
-            probs_for_rwd = is_future_mask * discount 
-        elif config.future_state_rwd_sampling == "uniform":
-            print("sample from the uniform distribution")
-            discount = 1 ** jnp.array(arrangement[None] - arrangement[:, None], dtype=jnp.float32)
-            probs_for_rwd = is_future_mask * discount
-        elif config.future_state_rwd_sampling == "inv_geometric":
-            print("sample from inverse geometric")
-            probs_for_rwd = is_future_mask * discount
-            probs_for_rwd = jnp.flip(probs_for_rwd, axis=-1)
-        elif config.future_state_rwd_sampling == "gaussian":
-            print("sample from gaussian distribution")
-            mean = 1.0 / (1.0 - discount)
-            std = 1.0
-            # Generate gaussian probabilities for future states
-            diff = jnp.array(arrangement[None] - arrangement[:, None], dtype=jnp.float32)
-            probs_for_rwd = jnp.exp(-0.5 * ((diff - mean) / std) ** 2)
-            # Only consider future states and normalize
-            probs_for_rwd = probs_for_rwd * is_future_mask
-        elif "sim_score" in config.future_state_rwd_sampling:
-            '''
-            # 1. take the future states and convert them to goals
-            # 2. get the state and goal representations
-            # 3. compute the score
-            '''
-            future_state = transition.observation
-            future_state_goal = future_state[:, goal_indicies]
-            state_rep, goal_rep, _ = apply_fn(contrastive_params, transition.observation[:, :env.state_dim], transition.action, future_state_goal, sample_key, args.da, train=False)
-            score = -jnp.sum(jnp.abs(state_rep[:, None, :] - goal_rep[None, :, :]), axis=-1)
-            score = score * is_future_mask
-            # sample accotding to the negative similarity score
-            if "neg" in config.future_state_rwd_sampling:
-                probs_for_rwd = jax.lax.stop_gradient(jnp.exp(-score))
-            elif "pos" in config.future_state_rwd_sampling:
-                probs_for_rwd = jax.lax.stop_gradient(jnp.exp(score))
-            
-        # sample goals for training the contrastive model
-        probs = is_future_mask * discount
-        
-        single_trajectories = jnp.concatenate([transition.extras["state_extras"]["seed"][:, jnp.newaxis].T] * seq_len, axis=0)
-        probs_for_rwd = probs_for_rwd * jnp.equal(single_trajectories, single_trajectories.T) + jnp.eye(seq_len) * 1e-5
-        probs = probs * jnp.equal(single_trajectories, single_trajectories.T) + jnp.eye(seq_len) * 1e-5
-
-        goal_index = jax.random.categorical(goal_key, jnp.log(probs))
-        future_state = jnp.take(transition.observation, goal_index[:-1], axis=0)
-        # print(future_state.shape)
-        # import pdb;pdb.set_trace()
-        future_action = jnp.take(transition.action, goal_index[:-1], axis=0)
-        
-        goal = future_state[:, goal_indicies]
-        future_state = future_state[:, :env.state_dim]
-        state = transition.observation[:-1, :env.state_dim]
-        new_obs = jnp.concatenate([state, goal], axis=1)
-        future_reward = jnp.take(transition.reward, goal_index[:-1], axis=0)
-
-        rwd_goal_index = jax.random.categorical(goal_key, jnp.log(probs_for_rwd))
-        future_state_for_rwd = jnp.take(transition.observation, rwd_goal_index[:-1], axis=0)
-
-        # import pdb;pdb.set_trace()
-        extras = {
-            "policy_extras": {},
-            "state_extras": {
-                "truncation": jnp.squeeze(transition.extras["state_extras"]["truncation"][:-1]),
-                "seed": jnp.squeeze(transition.extras["state_extras"]["seed"][:-1]),
-            },
-            "state": state,
-            "future_state": future_state,
-            "future_action": future_action,
-            "future_reward": future_reward,
-            "future_state_for_rwd": future_state_for_rwd
-        }
-
-        return transition._replace(
-            observation=jnp.squeeze(new_obs),
-            action=jnp.squeeze(transition.action[:-1]),
-            reward=jnp.squeeze(transition.reward[:-1]),
-            discount=jnp.squeeze(transition.discount[:-1]),
-            extras=extras,
-        )
-
-
-
-
-
-def load_params(path: str):
-    with epath.Path(path).open('rb') as fin:
-        buf = fin.read()
-    return pickle.loads(buf)
-
-def save_params(path: str, params: Any):
-    """Saves parameters in flax format."""
-    with epath.Path(path).open('wb') as fout:
-        fout.write(pickle.dumps(params))
-
-def save_args(args, path):
-    # convert to a dictionary 
-    args_dict = vars(args)
-    for k in args_dict:
-        if isinstance(args_dict[k], jax.Array):
-            args_dict[k] = args_dict[k].tolist()
-    # save the file 
-    file_path = os.path.join(path, 'args.json') 
-    with open(file_path, 'w') as f:
-        json.dump(args_dict, f)
-
-def save_buffer_sample(sample, path, global_step):
-    file_path = os.path.join(path, f"buffer_sample_{global_step}.npz")
-    jnp.savez(file_path, observation=sample.observation, action=sample.action)
+def actor_step(
+    env: Env,
+    env_state: State,
+    policy: Policy,
+    key: PRNGKey,
+    extra_fields: Sequence[str] = (),
+) -> Tuple[State, Transition]:
+    """Collect data."""
+    actions, policy_extras = policy(env_state.obs, key)
+    nstate = env.step(env_state, actions)
+    state_extras = {x: nstate.info[x] for x in extra_fields}
+    return nstate, Transition(  # pytype: disable=wrong-arg-types  # jax-ndarray
+        observation=env_state.obs,
+        action=actions,
+        reward=nstate.reward,
+        discount=1 - nstate.done,
+        next_observation=nstate.obs,
+        extras={"policy_extras": policy_extras, "state_extras": state_extras},
+    )
 
 InferenceParams = Tuple[running_statistics.NestedMeanStd, Params]
-
-
                    
 def main(args):
     sgd_to_env = (
@@ -539,18 +140,10 @@ def main(args):
     print("Num_prefill_actor_steps: ", args.num_prefill_actor_steps)
     print(f"Number of training steps per epoch: {args.num_training_steps_per_epoch}")
 
-
-
-    # run_name = f"{args.env_name}"
-
-    rnd_rms = RMS()
-
     scratch_path = os.getenv("SCRATCH")
     runs_path = os.path.join(scratch_path, "crl_runs")  
     os.makedirs(runs_path, exist_ok=True)
     exp_dir = os.path.join(args.model, args.env_name, args.run_name_suffix)   
-    # /exp_dir = os.path.join(runs_path, exp_dir)  
-    # os.makedirs(exp_dir, exist_ok=True)
     word = RandomWord().word()
     uid = f"{int(time.time())}_{word}"
     while os.path.exists(f"runs/{exp_dir}/{uid}"):
@@ -560,10 +153,7 @@ def main(args):
     ckpt_dir = run_dir + '/ckpt'
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
-    # import pdb;pdb.set_trace()
-
     
-
     process_id = jax.process_index()
     local_devices_to_use = jax.local_device_count()
     if args.min_replay_size >= args.num_timesteps:
@@ -611,7 +201,7 @@ def main(args):
         action_repeat=args.action_repeat,
         randomization_fn=v_randomization_fn,
     )
-    # import pdb;pdb.set_trace()  
+    #   
 
     obs_size = env.observation_size
     action_size = env.action_size
@@ -640,7 +230,7 @@ def main(args):
         observation_size=env.state_dim, action_size=action_size, preprocess_observations_fn=pre_process, layer_norm=args.layer_norm, activation=eval(args.agent_activation), hidden_layer_sizes=agent_hidden_dims
     )
     
-    # import pdb;pdb.set_trace()
+    # 
     make_policy = sac_networks.make_inference_fn(sac_network)
 
     alpha_optimizer = optax.adam(learning_rate=args.alpha_lr)
@@ -648,7 +238,6 @@ def main(args):
     policy_optimizer = optax.adam(learning_rate=args.actor_lr)
     q_optimizer = optax.adam(learning_rate=args.critic_lr)
 
-    ## TODO: Should we condition the Q-function on the future state?
 
     if args.crl_observation_dim > 0:
         args.crl_goal_indices = jnp.arange(args.crl_observation_dim)
@@ -706,25 +295,21 @@ def main(args):
     actor_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
-    @flax.struct.dataclass
-    class CRLNetworks:
-        critic_network: nn.Module
+    
     crl_networks = CRLNetworks(
         critic_network=contrastive_network
     )
-    # TODO: add function for contrastive reward, modify the training state, replace rnd reward with the critic reward
     contrastive_loss = make_contrastive_loss(crl_networks, args)
     contrastive_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         contrastive_loss, contrastive_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     
 
     print(f"Experiment directory (run_dir) is: {run_dir}")
-    # import pdb;pdb.set_trace()
+
     args.run_dir = run_dir
     args.ckpt_dir = ckpt_dir
-    # args.run_name = run_name
-    # import pdb;pdb.set_trace()
     save_args(args, run_dir)
+
     if args.track:
         if args.wandb_group ==  '.':
             args.wandb_group = None
@@ -825,8 +410,8 @@ def main(args):
             key_critic,
             optimizer_state=training_state.q_optimizer_state,
         )
-        # print(transitions.observation.shape)
-        # import pdb;pdb.set_trace()
+        
+        # 
         actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
             training_state.normalizer_params,
@@ -836,15 +421,6 @@ def main(args):
             key_actor,
             optimizer_state=training_state.policy_optimizer_state,
         )
-        # contrastive_loss, contrastive_params, contrastive_optimizer_state = rnd_update(
-        #     training_state.contrastive_params, 
-        #     training_state.normalizer_params,
-        #     transitions,
-        #     args.rnd_goal_indices,
-        #     obs_rms.M,
-        #     obs_rms.S,
-        #     optimizer_state=training_state.contrastive_optimizer_state
-        # )
 
         (contrastive_loss, contrastive_metrics), contrastive_params, contrastive_optimizer_state  = contrastive_update(
             training_state.contrastive_params,
@@ -863,7 +439,6 @@ def main(args):
             lambda x, y: x * (1 - args.tau) + y * args.tau, training_state.target_q_params, q_params
         )
 
-        # print(training_state.mean_coverage/training_state.gradient_steps)
         metrics = {
             "critic_loss": critic_loss,
             "actor_loss": actor_loss,
@@ -1007,7 +582,7 @@ def main(args):
         buffer_state, transitions = replay_buffer.sample(buffer_state)
 
         batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
-        # import pdb;pdb.set_trace()
+        # 
 
         transitions = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0, None, None, None))(
             config, env, transitions, batch_keys, args.crl_goal_indices, training_state.contrastive_params, crl_networks.critic_network.apply
@@ -1029,7 +604,7 @@ def main(args):
         transitions = transitions._replace(
             reward=crl_rewards
         )
-        # print((transitions.reward == rescaled_rnd_rewards).all())
+        
 
         (training_state, _), metrics = jax.lax.scan(sgd_step, (training_state, training_key), transitions)
         return training_state, buffer_state, metrics
@@ -1174,7 +749,7 @@ def main(args):
         "training/gamma"
     ]
 
-    # import pdb;pdb.set_trace()
+    
     csv_logger_path = os.path.join(run_dir, "logs.csv") 
     metrics_to_collect_logger = metrics_to_collect.copy()
     metrics_to_collect_logger.append("training_steps")
@@ -1215,10 +790,6 @@ def main(args):
         )
         ## Testing the discretized density for state coverage
     _, sample = replay_buffer.sample(new_state)
-    # obs_rms(sample.observation[:, :, args.rnd_goal_indices].reshape(-1, args.rnd_observation_dim))
-    # import pdb;pdb.set_trace()
-
-    
 
     replay_size = jnp.sum(jax.vmap(replay_buffer.size)(buffer_state)) * jax.process_count()
     logging.info("replay size after prefill %s", replay_size)
@@ -1227,15 +798,11 @@ def main(args):
 
     current_step = 0
 
-    # rendering_epochs =[int(t) for t in np.linspace(0, args.num_evals_after_init, 15)][1:]
-    # print("rendering_epochs")
-    # print(rendering_epochs)
     videos_indices = np.linspace(0, args.num_evals_after_init-1, args.num_videos).astype(int)
-    print("videos_indices")
-    print(videos_indices)
+    print(f"Rendering videos indices: {videos_indices}")
     
     # training loop!
-    # import pdb;pdb.set_trace()
+    # 
     for epoch in range(args.num_evals_after_init):
         print(f"epcoh: {epoch}")
         if epoch in videos_indices and args.render_agent:
@@ -1260,21 +827,19 @@ def main(args):
             insert_position= buffer_state.insert_position[0],
             sample_position= buffer_state.sample_position[0],
         )
-        ## Testing the discretized density for state coverage
+        
         _, sample = replay_buffer.sample(new_state)
-        # import pdb;pdb.set_trace()
+        
         path = os.path.join(run_dir, "buffer_data")
         os.makedirs(path, exist_ok=True)
-        # save_buffer_sample(sample, path, current_step)
+        
         density.update_count(sample.observation[:, :, env.goal_indices], current_step)
         coverage_metrics = {
             "num_visited_unique_state": density.num_states(),
             "visited_state_entorpy": density.entropy()
         }
         
-        
-        # import pdb;pdb.set_trace()
-        # obs_rms(sample.observation[:, :, args.rnd_goal_indices].reshape(-1, args.rnd_observation_dim))
+
         for k in coverage_metrics:
             training_metrics[f"training/{k}"] = coverage_metrics[k]
 
@@ -1298,7 +863,7 @@ def main(args):
                 params = _unpmap(training_state.contrastive_params_EMA)
                 path = f"{ckpt_dir}/sac_crl_ema.pkl"
                 model.save_params(path, params)
-                # import pdb;pdb.set_trace()
+                # 
 
 
             # Run evals.
@@ -1307,7 +872,7 @@ def main(args):
             )
             metrics["epoch"] = epoch
             logging.info(metrics)
-            # import pdb;pdb.set_trace()
+            # 
             logger_metrics = deepcopy(metrics)
             logger_metrics["training_steps"] = current_step
             _logger.log(logger_metrics)
@@ -1323,36 +888,7 @@ def main(args):
     brax_pmap.assert_is_replicated(training_state)
     logging.info("total steps: %s", total_steps)
     brax_pmap.synchronize_hosts()
-
-
-
     
 if __name__ == "__main__":
-    args = tyro.cli(Args)
-    # import pdb; pdb.set_trace()
+    args = tyro.cli(CTEC_Args)
     main(args)
-
-
-
-
-
-
-
-    
-
-
-
-
-
-
-
-
-
-
-
-    
-    
-        
-# (50000000 - 1024 x 1000) / 50 x 1024 x 62 = 15        #number of actor steps per epoch (which is equal to the number of training steps)
-# 1024 x 999 / 256 = 4000                               #number of gradient steps per actor step 
-# 1024 x 62 / 4000 = 16                                 #ratio of env steps per gradient step
