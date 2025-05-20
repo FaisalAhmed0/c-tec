@@ -198,7 +198,6 @@ def make_apt_loss(crl_networks, args: object):
         logits_mean = logits.mean(axis=-1).mean()
         logits_std = logits.std(axis=-1).mean()
 
-        # import pdb;pdb.set_trace()
         metrics = {
             "categorical_accuracy": jnp.mean(correct),
             "logits_pos": logits_pos,
@@ -210,4 +209,31 @@ def make_apt_loss(crl_networks, args: object):
         }
         return critic_loss, metrics
     return critic_loss
+
+
+
+
+### RND loss
+def make_rnd_loss(rnd_network):
+    def rnd_loss(rnd_params, normalizer_params ,transitions, goal_inds, mean, std):
+        observations = transitions.observation[:, goal_inds]
+        pred, target = rnd_network.apply(rnd_params, observations, mean, std)
+        mse_loss = jnp.mean(jnp.square(pred - target))
+        return mse_loss
+    return rnd_loss
+
+
+
+### ICM loss
+def make_icm_loss(icm_network):
+    def icm_loss(icm_params, normalizer_params ,transitions, goal_inds, icm_forward_loss_weight):
+        obs_t = transitions.observation[:, goal_inds]
+        action_t = transitions.action
+        next_obs = transitions.next_observation[:, goal_inds]
+        next_obs_latent_hat, action_hat, next_obs_latent = icm_network.apply(icm_params, obs_t, next_obs, action_t)
+        forward_loss = jnp.mean(jnp.square(next_obs_latent_hat - next_obs_latent))
+        backward_loss = jnp.mean(jnp.square(action_hat - action_t))
+        total_loss = (icm_forward_loss_weight * forward_loss) + ((1-icm_forward_loss_weight) * backward_loss)
+        return total_loss
+    return icm_loss
 

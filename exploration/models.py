@@ -171,3 +171,107 @@ class Aptcritic(nn.Module):
     
 
 
+
+
+### RND models
+class StateEncoder(nn.Module):
+    # hidden_dim: int
+    # output_dim: int
+    layer_sizes: list[int]
+    layer_norm: bool
+    activation: nn.activation = field(default=nn.relu)
+
+    @nn.compact
+    def __call__(self, state):
+        hidden = state
+        for i, hidden_size in enumerate(self.layer_sizes):
+            hidden = nn.Dense(
+                hidden_size,
+                name=f"hidden_{i}",
+                kernel_init=jax.nn.initializers.lecun_uniform(),
+                use_bias=True,
+            )(hidden)
+            if i != len(self.layer_sizes) - 1:
+                if self.layer_norm:
+                    hidden = nn.LayerNorm()(hidden)
+                hidden = self.activation(hidden)
+
+        return hidden
+    
+class RND(nn.Module):
+    args: object 
+
+    def setup(self):
+        args = self.args
+        hidden_sizes = [args.rnd_hidden_dim]*args.rnd_number_hiddens + [args.rnd_embed_dim]
+        self.predictor = StateEncoder(layer_sizes=hidden_sizes, layer_norm=args.layer_norm, activation=eval(args.activation))
+        self.target = StateEncoder(layer_sizes=hidden_sizes, layer_norm=args.layer_norm, activation=eval(args.activation))
+        
+    def __call__(self, obs, obs_mean, obs_std):
+        args = self.args
+        if args.obs_rms:
+            obs = self.normalize(obs, obs_mean, obs_std)
+        pred = self.predictor(obs)
+        target = self.target(obs)
+        return pred, jax.lax.stop_gradient(target)
+    
+    def normalize(self, arr: jax.Array, mean: jax.Array, std: jax.Array, eps: float = 1e-8) -> jax.Array:
+        # utils for observation normalization
+        return jnp.clip((arr - mean) / (std + eps), -5., 5.)
+    
+
+
+
+### ICM models
+class MLP(nn.Module):
+    layer_sizes: list[int]
+    layer_norm: bool
+    activation: nn.activation = field(default=nn.relu)
+    activate_final: bool = False
+
+    @nn.compact
+    def __call__(self, state):
+        hidden = state
+        for i, hidden_size in enumerate(self.layer_sizes):
+            hidden = nn.Dense(
+                hidden_size,
+                name=f"hidden_{i}",
+                kernel_init=jax.nn.initializers.lecun_uniform(),
+                use_bias=True,
+            )(hidden)
+            if i != len(self.layer_sizes) - 1 or self.activate_final:
+                if self.layer_norm:
+                    hidden = nn.LayerNorm()(hidden)
+                hidden = self.activation(hidden)
+
+        return hidden
+        
+
+class ICM(nn.Module):
+    args: object 
+
+    def setup(self):
+        args = self.args
+        # setup the state encoder, forward model and backward model
+        hidden_sizes_state_endoer = [args.icm_hidden_dim]*args.icm_number_hiddens + [args.icm_embed_dim]
+        hidden_sizes_forward_model = [args.icm_hidden_dim]*(args.icm_number_hiddens-1) + [args.icm_embed_dim]
+        hidden_sizes_backward_model = [args.icm_hidden_dim]*(args.icm_number_hiddens-1) + [args.action_dim]
+        self.obs_encoder = MLP(layer_sizes=hidden_sizes_state_endoer, layer_norm=args.layer_norm, activation=eval(args.activation))
+        self.forward_model = MLP(layer_sizes=hidden_sizes_forward_model, layer_norm=args.layer_norm, activation=eval(args.activation))
+        self.backward_model = MLP(layer_sizes=hidden_sizes_backward_model, layer_norm=args.layer_norm, activation=eval(args.activation), activate_final=nn.tanh)
+
+
+    def __call__(self, obs, next_obs, action):
+        args = self.args
+        # get the observation latent
+        obs_latent = self.obs_encoder(obs)
+        next_obs_latent = self.obs_encoder(next_obs)
+        # forward prediction
+        next_obs_latent_hat = self.forward_model(jnp.concatenate([obs_latent, action], axis=-1))
+        # backward prediction 
+        action_hat = self.backward_model(jnp.concatenate([obs_latent, next_obs_latent], axis=-1))
+
+        return next_obs_latent_hat, action_hat, next_obs_latent
+
+    def encode(self, obs):
+        return self.obs_encoder(obs)

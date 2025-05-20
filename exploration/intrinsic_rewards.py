@@ -1,6 +1,9 @@
 import jax
+from jax import lax
 import jax.numpy as jnp
 from brax.training import types
+from typing import Any
+from utils import update_rms
 
 Transition = types.Transition
 
@@ -44,3 +47,32 @@ def apt_reward(contrastive_network, contrastive_params, transition: Transition, 
     reward = mean_knn_dists
     
     return  jax.lax.stop_gradient(reward)
+
+
+
+def rnd_reward(rnd_network, rnd_params, transition: Transition, goal_inds: jax.Array, rwd_rms_state: Any, rnd_obs_rms_state: Any, rwd_rms=False):
+    next_state = transition.next_observation[:, :, goal_inds]
+    pred, target = rnd_network.apply(rnd_params, next_state, rnd_obs_rms_state[1], rnd_obs_rms_state[2])
+    rwd = jax.lax.stop_gradient(jnp.mean(jnp.square(pred - target), axis=-1))
+    if rwd_rms:
+        eps = 1e-8
+        rwd_rms_state, (means, stds) = lax.scan(update_rms, rwd_rms_state, rwd.reshape(-1))
+        rwd  = rwd / (stds[-1] + eps)
+        
+    return rwd, rwd_rms_state
+
+
+
+
+def icm_reward(icm_network, icm_params, transition: Transition, goal_inds: jax.Array, icm_rms_state: Any, rwd_rms=False):
+    obs_t = transition.observation[:, :, goal_inds]
+    action_t = transition.action
+    next_obs = transition.next_observation[:, :, goal_inds]
+    next_obs_latent_hat, _, next_obs_latent = icm_network.apply(icm_params, obs_t, next_obs, action_t)
+    rwd = jax.lax.stop_gradient(jnp.mean(jnp.square(next_obs_latent_hat - next_obs_latent), axis=-1))
+    if rwd_rms:
+        eps = 1e-8
+        icm_rms_state, (means, stds) = jax.lax.scan(update_rms, icm_rms_state, rwd.reshape(-1))
+        rwd  = rwd / (stds[-1] + eps)
+    # import pdb;pdb.set_trace()
+    return rwd, icm_rms_state

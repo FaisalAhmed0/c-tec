@@ -217,3 +217,166 @@ class APT_args:
     save_all_crl_ckpts: bool = False
     include_action_in_crl: bool = False
     ema: float = 0.999
+
+
+@dataclass
+class RND_args:
+    exp_name: str = os.path.basename(__file__)[: -len(".py")]
+    seed: int = np.random.randint(2**31)
+    torch_deterministic: bool = True
+    cuda: bool = True
+    track: bool = False
+    wandb_project_name: str = "exploration"
+    wandb_entity: str = None
+    wandb_mode: str = 'online'
+    wandb_dir: str = '.'
+    wandb_group: str = '.'
+    capture_video: bool = False
+    checkpoint: bool = False
+    run_name_suffix: str = ""
+    num_videos: int = 30
+
+    #environment specific arguments
+    env_name: str = "ant_hardest_maze"
+    episode_length: int = 1000
+    # to be filled in runtime
+    obs_dim: int = 0
+    goal_start_idx: int = 0
+    goal_end_idx: int = 0
+
+    # Algorithm specific arguments
+    num_timesteps: int = 10_000_000
+    num_epochs: int = 50
+    num_envs: int = 512
+    num_eval_envs: int = 128
+    actor_lr: float = 3e-4
+    critic_lr: float = 3e-4
+    alpha_lr: float = 3e-4
+    rnd_lr: float = 3e-4
+    batch_size: int = 256
+    discounting: float = 0.99
+    use_dense_reward: bool = False
+    tau = 0.005
+    logsumexp_penalty_coeff: float = 0.1
+    entropy_reg: bool = True
+
+    max_replay_size: int = 10000
+    min_replay_size: int = 1000
+    agent_number_hiddens: int = 2
+    agent_hidden_dim: int = 256
+    
+    unroll_length: int  = 62
+    reward_scaling: float = 1.0
+    use_her: bool = False
+    """Use hindsight experince replay"""
+    multiplier_num_sgd_steps: int = 1
+    deterministic_eval: bool = False
+    action_repeat: int = 1
+    num_evals: int = 50
+    backend: str = None
+    eval_env: str = None
+    render_agent: bool = False
+    include_goal_in_obs: bool = False
+    rnd_number_hiddens: int = 2
+    rnd_hidden_dim: int = 256
+    rnd_embed_dim: int = 512
+    rnd_observation_dim: int = 0 # to be specified at run_time
+    layer_norm: bool = False
+    activation: str = "nn.relu"
+    model: str = "rnd"
+    # to be filled in runtime
+    env_steps_per_actor_step : int = 0
+    """number of env steps per actor step (computed in runtime)"""
+    num_prefill_env_steps : int = 0
+    """number of env steps to fill the buffer before starting training (computed in runtime)"""
+    num_prefill_actor_steps : int = 0
+    """number of actor steps to fill the buffer before starting training (computed in runtime)"""
+    num_training_steps_per_epoch : int = 0
+    """the number of training steps per epoch(computed in runtime)"""
+    render_freq: int = 12
+    use_complete_future_state: bool = True
+    rnd_observation_dim: int = 0
+    rnd_goal_indices: object = None
+    obs_rms: bool = False
+    rwd_rms: bool = True
+
+
+
+@dataclass
+class ICM_args:
+    exp_name: str = os.path.basename(__file__)[: -len(".py")]
+    seed: int = np.random.randint(2**31)
+    torch_deterministic: bool = True
+    cuda: bool = True
+    track: bool = False
+    wandb_project_name: str = "exploration"
+    wandb_entity: str = None
+    wandb_mode: str = 'online'
+    wandb_dir: str = '.'
+    wandb_group: str = '.'
+    capture_video: bool = False
+    checkpoint: bool = False
+    run_name_suffix: str = ""
+    num_videos: int = 30
+    #environment specific arguments
+    env_name: str = "ant_hardest_maze"
+    episode_length: int = 1000
+    obs_dim: int = 0 # to be filled in runtime
+    action_dim: int = 0 # to be filled in runtime
+    goal_start_idx: int = 0 
+    goal_end_idx: int = 0 
+
+    # Algorithm specific arguments
+    icm_observation_dim: int = 0 # to be specified at run_time
+    num_timesteps: int = 10_000_000
+    num_epochs: int = 50
+    num_envs: int = 512
+    num_eval_envs: int = 128
+    actor_lr: float = 3e-4
+    critic_lr: float = 3e-4
+    alpha_lr: float = 3e-4
+    icm_lr: float = 3e-4
+    batch_size: int = 256
+    discounting: float = 0.99
+    use_dense_reward: bool = False
+    tau = 0.005
+    icm_number_hiddens: int = 2
+    icm_hidden_dim: int = 1024
+    icm_embed_dim: int = 512
+    layer_norm: bool = False
+    activation: str = "nn.relu"
+    icm_reward_rms: bool = False
+    model: str = "icm"
+    obs_rms: bool = False
+    icm_forward_loss_weight:float = 0.2
+    
+    max_replay_size: int = 10000
+    min_replay_size: int = 1000
+    agent_number_hiddens: int = 2
+    agent_hidden_dim: int = 256
+    
+    unroll_length: int  = 62
+    reward_scaling: float = 1.0
+    use_her: bool = False
+    """Use hindsight experince replay"""
+    multiplier_num_sgd_steps: int = 1
+    deterministic_eval: bool = False
+    action_repeat: int = 1
+    num_evals: int = 50
+    backend: str = None
+    eval_env: str = None
+    render_agent: bool = False
+    include_goal_in_obs: bool = False
+    # to be filled in runtime
+    env_steps_per_actor_step : int = 0
+    """number of env steps per actor step (computed in runtime)"""
+    num_prefill_env_steps : int = 0
+    """number of env steps to fill the buffer before starting training (computed in runtime)"""
+    num_prefill_actor_steps : int = 0
+    """number of actor steps to fill the buffer before starting training (computed in runtime)"""
+    num_training_steps_per_epoch : int = 0
+    """the number of training steps per epoch(computed in runtime)"""
+    render_freq: int = 25
+    e3b_lambda: float = 0.1
+    rwd_rms: bool = True
+    use_complete_future_state: bool = True
