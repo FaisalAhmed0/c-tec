@@ -151,7 +151,7 @@ def main(args):
     os.makedirs(runs_path, exist_ok=True)
     exp_dir = os.path.join(args.model, args.env_name, args.run_name_suffix)   
     # /exp_dir = os.path.join(runs_path, exp_dir)  
-    os.makedirs(exp_dir, exist_ok=True)
+    # os.makedirs(exp_dir, exist_ok=True)
     word = RandomWord().word()
     uid = f"{int(time.time())}_{word}"
     while os.path.exists(f"runs/{exp_dir}/{uid}"):
