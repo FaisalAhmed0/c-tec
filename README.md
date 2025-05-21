@@ -1,1 +1,1 @@
-# Curiosity-Driven Exploration via Temporal Contrastive Learning
+# Curiosity-Driven Exploration via Temporal Contrastive Learning (Craftax)
