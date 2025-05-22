@@ -12,8 +12,24 @@ conda env create -f environment.yaml
 conda activate jax_expl
 ```
 ## Experiments and hyperparameters
-...
-## Logging
-...
-## Environment
-...
+To track the experiments in Weights & Biases (wandb), make sure you have set up your wandb account. For more details, check https://docs.wandb.ai/quickstart
+
+Please check the ```exploration/scripts``` folder, which contains bash scripts to run the epaper's xperiments.
+
+### Robotics experiments
+#### C-TeC
+```
+bash scripts/ctec.sh
+```
+#### APT
+```
+bash scripts/apt.sh
+```
+#### RND
+```
+bash scripts/rnd.sh
+```
+#### ICM
+```
+bash scripts/icm.sh
+```
