@@ -1,3 +1,10 @@
 */__pycache__
 */*/__pycache__
+*/*/*/__pycache__
+*/*/*/*/__pycache__
 __pycache__
+wandb
+*/wandb
+*/*/wandb
+exploration/envs/manipulation/__pycache__/arm_binpick_easy.cpython-310.pyc
+exploration/envs/manipulation/__pycache__/arm_reach.cpython-310.pyc
