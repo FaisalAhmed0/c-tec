@@ -9,7 +9,11 @@ Exploration remains a key challenge in reinforcement learning (RL), especially i
 - Create the conda environment
 ```
 conda env create -f environment.yaml
-conda activate jax_expl
+conda activate ctec
+```
+install jax and jaxlub with cuda12 support
+```
+python -m pip install "jax[cuda12]=0.4.25"
 ```
 ## Experiments and hyperparameters
 To track the experiments in Weights & Biases (wandb), make sure you have set up your wandb account. For more details, check https://docs.wandb.ai/quickstart
