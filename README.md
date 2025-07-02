@@ -11,7 +11,7 @@ Exploration remains a key challenge in reinforcement learning (RL), especially i
 conda env create -f environment.yaml
 conda activate ctec
 ```
-install jax and jaxlub with cuda12 support
+install jax and jaxlib with cuda12 support
 ```
 python -m pip install "jax[cuda12]=0.4.25"
 ```
