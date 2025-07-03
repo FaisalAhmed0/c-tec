@@ -59,7 +59,7 @@ def ctec_rnn_args(sys):
     parser.add_argument("--similarity_measure", type=str, default="l2")
     parser.add_argument("--contrastive_loss", type=str, default="infonce")
     parser.add_argument("--logsumexp_penalty_coeff", type=float, default=0.0)
-    parser.add_argument("--use_single_sample", type=int, default=1)
+    parser.add_argument("--use_mc_reward", type=int, default=1) # use the Monte Carlo C-TeC reward
     parser.add_argument("--use_norm_constant", type=int, default=0)
     parser.add_argument("--use_action_in_cl", type=int, default=1)
     parser.add_argument("--rwd_rms", type=int, default=0)

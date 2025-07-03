@@ -4,6 +4,7 @@ import os
 import sys
 
 import jax
+from jax import lax
 import jax.numpy as jnp
 import flax.linen as nn
 import numpy as np
@@ -150,7 +151,7 @@ def make_train(config):
     )
     print("mini_batch_size", config["MINIBATCH_SIZE"])
     print("mini_batch_size for contrastive training", config["MINIBATCH_SIZE"] * config["UPDATE_PROPORTION"])
-    # import pdb;pdb.set_trace()
+    
 
     # Create environment
     env = make_craftax_env_from_name(
@@ -203,16 +204,17 @@ def make_train(config):
             "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1),
             "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr[:, None, :] - g_repr[None, :, :]), axis=-1),
             "dot": lambda sa_repr, g_repr: jnp.einsum("ik,jk->ij", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
-        }
-    similarity_methods_rnn = {
-            "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1)),
-            "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1),
-            "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr[:, None, :] - g_repr[None, :, :]), axis=-1),
-            "dot": lambda sa_repr, g_repr: jnp.einsum("hik,hjk->hij", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
-        }
-    # import pdb;pdb.set_trace()
+        } # for the contrastive loss
+    
+    similarity_methods_for_rwd = {
+            "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr - g_repr) ** 2, axis=-1)),
+            "l2_no_sqrt": lambda sa_repr, g_repr: -(jnp.sum((sa_repr - g_repr) ** 2, axis=-1)),
+            "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr - g_repr), axis=-1),
+            "dot": lambda sa_repr, g_repr: jnp.einsum("ik,jk->i", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
+        } # for computing the c-tec reward
+    
     similarity_method = similarity_methods[config["SIMILARITY_MEASURE"]]
-    similarity_method_rnn = similarity_methods_rnn[config["SIMILARITY_MEASURE"]]
+    similarity_method_for_rwd = similarity_methods_for_rwd[config["SIMILARITY_MEASURE"]]
     csv_logger_path = os.path.join(config["RUN_DIR"], "logs.csv") 
     csv_logger = create_csv_logger(config["ENV_NAME"], csv_logger_path)
     
@@ -229,8 +231,6 @@ def make_train(config):
         Returns:
         future_obs: Array of shape (num_steps, feature_dim)
         """
-        # obs = trajcectory.obs
-        # dones = trajcectory.done
         max_steps = obs.shape[0]
         gamma = config["GAMMA_CL"]
 
@@ -300,7 +300,7 @@ def make_train(config):
         contrastive_network = ContrastiveModel(config)
         if config["USE_EMPOWERMENT"]:
             emp_network = EmpowermentModel(config)
-        # import pdb;pdb.set_trace()
+        
 
         crl_state = {
             "crl_model": None
@@ -433,89 +433,68 @@ def make_train(config):
             last_val = last_val.squeeze(0)
 
             def _calculate_gae(traj_batch, future_obs, last_val, last_done, intr_rms_state, extr_rms_state, init_hidden):
-                def get_crl_repr(carry, transition_batch):
-                    H = config["NUM_STEPS"]
-                    # import pdb;pdb.set_trace()
-                    transition, future_obs = transition_batch
-                    dicounted_future_reprs, obs_action_rep, next_done, time_step_counter, init_hidden = carry
-                    info = transition.info
-                    done = transition.done
-                    action_onehot = jax.nn.one_hot(transition.action, num_classes=action_shape)
-                    if config["USE_RNN"]:
-                        obs_inpt = transition.obs[np.newaxis, :]
-                        action_inpt = action_onehot[np.newaxis, :]
-                        future_obs_inpt = future_obs[np.newaxis, :]
-                        done_inpt = done[np.newaxis, :]
-                    else:
-                        obs_inpt = transition.obs
-                        action_inpt = action_onehot
-                        future_obs_inpt = future_obs
-                        done_inpt = done
-                    if config["USE_SINGLE_SAMPLE"]:
-                        obs_action_rep, future_obs_rep, log_temp, init_hidden = contrastive_network.apply(crl_state["crl_model"].params, obs_inpt, action_inpt, future_obs_inpt, done_inpt, init_hidden)
-                        dicounted_future_reprs = future_obs_rep
-                    else:
-                        # import pdb;pdb.set_trace()  
-                        obs_action_rep, future_obs_rep, log_temp, init_hidden = contrastive_network.apply(crl_state["crl_model"].params, obs_inpt, action_inpt, future_obs_inpt, done_inpt, init_hidden)
-                        # gamma_cl_reward
-                        dicounted_future_reprs = future_obs_rep + config["GAMMA_CL_REWARD"] * dicounted_future_reprs * (1 - next_done[:, None])
-                        time_step_counter = time_step_counter - 1
-                        # if the episode is done, reset the counter, we use this expression to avoid jax related errors, when using boolean indexing directly
-                        time_step_counter = (time_step_counter * (1-next_done)) + (next_done * H)
-                        # if config["USE_NORM_CONSTANT"]:
-                        #     normalization_constant = (1 - config["GAMMA_CL"]**(H - time_step_counter[:, None] )) / (1 - config["GAMMA_CL"])
-                        #     dicounted_future_reprs = dicounted_future_reprs * normalization_constant
-                    # import pdb;pdb.set_trace()
-                    # import pdb;pdb.set_trace()  
-                    if config["USE_RNN"]:
-                        dicounted_future_reprs = dicounted_future_reprs[0]
-                        obs_action_rep = obs_action_rep[0]
-                    return (jax.lax.stop_gradient(dicounted_future_reprs), obs_action_rep, done, time_step_counter, init_hidden), (jax.lax.stop_gradient(obs_action_rep), jax.lax.stop_gradient(dicounted_future_reprs), time_step_counter)
+                @jax.jit
+                def mc_crl_reward(trans_batch, gamma):
+                    trans_batch, future_obs = trans_batch
+                    
+                    state = trans_batch.obs
+                    action = trans_batch.action
+                    dones = trans_batch.done
+
+                    T, N, D = state.shape
+                    deltas_desc = jnp.arange(T-1, 0, -1)
+                    def one_time(_, t):
+                        s_t = lax.dynamic_index_in_dim(state, t, axis=0, keepdims=False)
+                        a_t = lax.dynamic_index_in_dim(action, t, axis=0, keepdims=False)
+                        a_t = jax.nn.one_hot(a_t, num_classes=action_shape)
                         
+                        done = lax.dynamic_index_in_dim(dones, t, axis=0, keepdims=False)
+                        def accumulate(r, delta):
+                            
+                            k, valid = t + delta, ((t + delta) < T)
+                            s_k = lax.dynamic_index_in_dim(state, jnp.minimum(k, T-1),
+                                                        axis=0, keepdims=False)
+                            obs_action_rep, future_obs_rep, log_temp, init_hidden = contrastive_network.apply(crl_state["crl_model"].params, s_t, a_t, s_k, None, None)
+                            d2  = similarity_method_for_rwd(obs_action_rep, future_obs_rep)    # (N,)
 
+                            d2 = jnp.where(~done, d2*valid, 0.0)
+                            return d2 + gamma * r, None
+                        r_t, _ = lax.scan(accumulate, jnp.zeros((N,)), deltas_desc)
+                        norm = (1.0 - gamma ** (T - t)) / (1.0 - gamma) if config["USE_NORM_CONSTANT"] else 1
+                        return _, norm*r_t
+                    _, reward_rev = lax.scan(one_time, None, jnp.arange(T-1, -1, -1))
+                    return reward_rev[::-1]
 
-                def crl_reward(obs_action_rep, future_obs_rep):
-                    rwd = -similarity_method(obs_action_rep, future_obs_rep).diagonal()
-                    # import pdb;pdb.set_trace()
-                    return jax.lax.stop_gradient(rwd)
-                
-                def emp_reward(transition, future_obs):
+                def crl_reward(transition, future_obs):
                     action_onehot = jax.nn.one_hot(transition.action, num_classes=action_shape)
-                    obs_action_rep, obs_rep, future_obs_rep, future_obs_rep2, log_temp = emp_network.apply(emp_state["emp_model"].params, transition.obs, action_onehot, future_obs)
-                    rwd = (similarity_method(obs_action_rep, future_obs_rep).diagonal() - similarity_method(obs_rep, future_obs_rep2).diagonal())    
-                    # import pdb;pdb.set_trace()
+                    obs_action_rep, future_obs_rep, log_temp, _ = contrastive_network.apply(crl_state["crl_model"].params, transition.obs, action_onehot, future_obs, None, None)
+                    rwd = -similarity_method_for_rwd(obs_action_rep, future_obs_rep)
                     return jax.lax.stop_gradient(rwd)
                 
                 def _get_advantages(carry, transition_batch):
-                    transition, future_obs, obs_action_rep, future_obs_rep = transition_batch
-                    # import pdb;pdb.set_trace()  
+                    transition, future_obs, ctec_mc_reward = transition_batch
+                      
                     gae, next_value, next_done, _, _ , intr_rms_state, extr_rms_state= carry
                     done, value, task_reward = (
                         transition.done,
                         transition.value,
                         transition.reward,
                     )
-                    if config["USE_EMPOWERMENT"]:
-                        # TODO: update the method to work the same as crl_reward(...)
-                        emp_rewards = emp_reward(transition, future_obs)
-                        reward = (emp_rewards * config["CRL_REWARD_COEF"]) + config["TASK_REWARD_COEF"] * task_reward
+                    if config["USE_MC_REWARD"]:
+                        crl_rewards = ctec_mc_reward
                     else:
-                        # import pdb;pdb.set_trace()
-                        crl_rewards = crl_reward(obs_action_rep, future_obs_rep)
-                        if config["RWD_RMS"]:
-                            intr_rms_state, (means, stds) = jax.lax.scan(update_rms, intr_rms_state, crl_rewards)
-                            crl_rewards = crl_rewards / stds[-1]
-                        reward = (crl_rewards * config["CRL_REWARD_COEF"]) + config["TASK_REWARD_COEF"] * task_reward + config["LIFE_REWARD"]
-                        if config["USE_RELATIVE_SCALE"]:
-                            intr_rms_state, (intr_means, intr_stds) = jax.lax.scan(update_rms, intr_rms_state, jnp.abs(crl_rewards))
-                            extr_rms_state, (extr_means, extr_stds) = jax.lax.scan(update_rms, extr_rms_state, jnp.abs(task_reward))
-                            final_intr_mean = intr_rms_state[1]
-                            final_extr_mean = extr_rms_state[1]
-                            scale = config["RELATIVE_SCALE"] * (final_extr_mean[-1]/final_intr_mean[-1])
-                            reward = task_reward + scale * crl_rewards
-                            # import pdb;pdb.set_trace()
-                        
-                        # import pdb;pdb.set_trace()  
+                        crl_rewards = crl_reward(transition, future_obs)
+                    if config["RWD_RMS"]:
+                        intr_rms_state, (means, stds) = jax.lax.scan(update_rms, intr_rms_state, crl_rewards)
+                        crl_rewards = crl_rewards / stds[-1]
+                    reward = (crl_rewards * config["CRL_REWARD_COEF"]) + config["TASK_REWARD_COEF"] * task_reward + config["LIFE_REWARD"]
+                    if config["USE_RELATIVE_SCALE"]:
+                        intr_rms_state, (intr_means, intr_stds) = jax.lax.scan(update_rms, intr_rms_state, jnp.abs(crl_rewards))
+                        extr_rms_state, (extr_means, extr_stds) = jax.lax.scan(update_rms, extr_rms_state, jnp.abs(task_reward))
+                        final_intr_mean = intr_rms_state[1]
+                        final_extr_mean = extr_rms_state[1]
+                        scale = config["RELATIVE_SCALE"] * (final_extr_mean[-1]/final_intr_mean[-1])
+                        reward = task_reward + scale * crl_rewards  
                     delta = (
                         reward + config["GAMMA"] * next_value * (1 - next_done) - value
                     )
@@ -523,32 +502,15 @@ def make_train(config):
                         delta
                         + config["GAMMA"] * config["GAE_LAMBDA"] * (1 - next_done) * gae
                     )
-                    # import pdb;pdb.set_trace()
+                    
                     return (gae, value, done, crl_rewards, task_reward.astype(float), intr_rms_state, extr_rms_state), gae
 
-                # import pdb;pdb.set_trace()
-                # init_hidden = flax.utils.replicate(initial_hstate, future_obs.shape[0])
-                _, o = jax.lax.scan(
-                    get_crl_repr,
-                    (jnp.zeros((config["NUM_ENVS"], config["REPR_DIM"])), jnp.zeros((config["NUM_ENVS"], config["REPR_DIM"])), last_done, jnp.ones(config["NUM_ENVS"])*config["GEOM_TRUNC"], init_hidden),
-                    (traj_batch, future_obs),
-                    reverse=True,
-                    unroll=16,
-                )
-                # import pdb;pdb.set_trace()
-                obs_action_rep, dicounted_future_reprs, time_step_counter = o
-                # import pdb;pdb.set_trace()
-                # the constant is per time_step, so we need to compute for each time_step.
-                if config["USE_NORM_CONSTANT"] and not config["USE_SINGLE_SAMPLE"]:
-                        normalization_constant = (1 - config["GAMMA_CL_REWARD"]**(config["GEOM_TRUNC"] - time_step_counter)) / (1 - config["GAMMA_CL_REWARD"])
-                        dicounted_future_reprs = dicounted_future_reprs * normalization_constant[:, :, None]
-
                 
-                # import pdb;pdb.set_trace()
+                crl_rwd_mc = -1 * mc_crl_reward((traj_batch, future_obs), config["GAMMA_CL_REWARD"])
                 adv_info, advantages = jax.lax.scan(
                     _get_advantages,
                     (jnp.zeros_like(last_val), last_val, last_done, jnp.zeros_like(last_val), jnp.zeros_like(last_val), intr_rms_state, extr_rms_state),
-                    (traj_batch, future_obs, obs_action_rep, dicounted_future_reprs),
+                    (traj_batch, future_obs, crl_rwd_mc),
                     reverse=True,
                     unroll=16,
                 )
@@ -568,10 +530,10 @@ def make_train(config):
 
                     # update the contrastive model
                     def _crl_loss(model_params, traj_batch, future_obs, init_hstate):
-                        # import pdb;pdb.set_trace()
+                        
                         action_onehot = jax.nn.one_hot(traj_batch.action, num_classes=action_shape)
                         if config["USE_RNN"]:
-                            # import pdb;pdb.set_trace()
+                            
                             obs_in = traj_batch.obs
                             action_in = action_onehot
                             future_obs = future_obs
@@ -590,11 +552,11 @@ def make_train(config):
                         # add the regularization term
                         logsumexp = jax.nn.logsumexp(sim + 1e-6, axis=-1)
                         loss += config["LOGSUMEXP_PENALTY_COEFF"] * jnp.mean(logsumexp**2)
-                        # import pdb;pdb.set_trace()
+                        
                         return loss
                     
                     def _emp_loss(model_params, traj_batch, future_obs):
-                        # import pdb;pdb.set_trace()
+                        
                         action_onehot = jax.nn.one_hot(traj_batch.action, num_classes=action_shape)
                         obs_in = traj_batch.obs.reshape(-1, obs_shape)
                         action_in = action_onehot.reshape(-1, action_shape)
@@ -605,7 +567,7 @@ def make_train(config):
                         loss1 = contrastive_losses()[config["CONTRASTIVE_LOSS"]](sim1)
                         loss2 = contrastive_losses()[config["CONTRASTIVE_LOSS"]](sim2)
                         loss = loss1 + loss2
-                        # import pdb;pdb.set_trace()
+                        
                         return loss
 
                     def _loss_fn(params, init_hstate, traj_batch, gae, targets):
@@ -661,7 +623,7 @@ def make_train(config):
 
                     else:
                         # update the contrastive model
-                        # import pdb;pdb.set_trace()
+                        
                         crl_grad_fn = jax.value_and_grad(_crl_loss, has_aux=False)
                         crl_loss, crl_grad = crl_grad_fn(crl_state["crl_model"].params, traj_batch, future_obs_batch, init_hstate)
                         crl_state["crl_model"] = crl_state["crl_model"].apply_gradients(grads=crl_grad)
@@ -734,11 +696,11 @@ def make_train(config):
                 / traj_batch.info["returned_episode"].sum(),
                 traj_batch.info,
             )
-            # import pdb;pdb.set_trace()
+            
             metric["crl_loss"] = loss_info[1][1].mean()
             metric["task_reward"] = traj_batch.reward.mean()
             metric["crl_reward"] = adv_info[3].mean()
-            # import pdb;pdb.set_trace()  
+              
             online_correlation_state = update_corr_state(online_correlation_state, metric["task_reward"], metric["crl_reward"]) 
             corr = compute_correlation(online_correlation_state)    
             metric["task_intrinisc_correlation"] = corr
@@ -759,7 +721,7 @@ def make_train(config):
                         agg_logs = batch_log(update_step, to_log, config)
                         csv_logger.log(agg_logs)    
                         
-                    # import pdb;pdb.set_trace()
+                    
                 jax.debug.callback(callback, metric, update_step)
 
             runner_state = (
@@ -841,7 +803,7 @@ def run_ppo(config):
     config["RUN_DIR"] = run_dir
     config["CHECKPOINT_DIR"] = ckpt_dir
     print("Experiment directory: ", run_dir)
-    # import pdb;pdb.set_trace()
+    
     save_args(config, run_dir)
 
     train_jit = jax.jit(make_train(config))
@@ -857,15 +819,15 @@ def run_ppo(config):
     metric = out["metric"]
     labels  = []
     values = []
-    # import pdb;pdb.set_trace()
+    
     for m in metric:
         if "Achievements" in m:
             label = m[m.index("Achievements") + len("Achievements") + 1:]
             labels.append(label)
             values.append(metric[m].mean().item())
-    # import pdb;pdb.set_trace()
+    
     wandb_bar_chart(labels, values)
-    # import pdb;pdb.set_trace()
+    
 
     if config["USE_WANDB"]:
 
