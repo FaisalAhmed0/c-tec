@@ -128,6 +128,7 @@ def main(args):
     ) / (args.num_envs * args.unroll_length)
     print(f"SGD steps per env steps: {sgd_to_env}")
     args.sgd_to_env = sgd_to_env
+    args.env_to_sgd = 1/sgd_to_env
 
     args.num_evals_after_init = max(args.num_evals - 1, 1)
     args.env_steps_per_actor_step = args.num_envs * args.unroll_length
@@ -136,9 +137,10 @@ def main(args):
     args.num_training_steps_per_epoch = -(
         -(args.num_timesteps - args.num_prefill_env_steps) // (args.num_evals_after_init * args.env_steps_per_actor_step)
     )
-    print(f"env_steps_per_actor_step: {args.env_steps_per_actor_step}")
-    print("Num_prefill_actor_steps: ", args.num_prefill_actor_steps)
+    # print(f"env_steps_per_actor_step: {args.env_steps_per_actor_step}")
+    # print("Num_prefill_actor_steps: ", args.num_prefill_actor_steps)
     print(f"Number of training steps per epoch: {args.num_training_steps_per_epoch}")
+    print(f"env_to_sgd_steps ratio={1/sgd_to_env}:1")
 
     scratch_path = os.getenv("SCRATCH")
     runs_path = os.path.join(scratch_path, "crl_runs")  
