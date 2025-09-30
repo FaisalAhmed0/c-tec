@@ -43,7 +43,7 @@ from utils import MetricsRecorder, create_env, create_eval_env,\
 from intrinsic_rewards import crl_reward
 from buffers import TrajectoryUniformSamplingQueue
 from losses import make_contrastive_critic_loss as make_contrastive_loss
-from models import ContrastiveCritic
+from models import ContrastiveCritic, MonolithicCritic
 from wonderwords import RandomWord
 
 
@@ -251,7 +251,11 @@ def main(args):
         args.crl_observation_dim = env.state_dim if args.use_complete_future_state else env.goal_indices.shape[-1]
 
     # Make the contrastive critic
-    contrastive_network = ContrastiveCritic(args)
+    if args.use_monolithic_critic:
+        import pdb;pdb.set_trace()
+        contrastive_network = MonolithicCritic(args)
+    else:
+        contrastive_network = ContrastiveCritic(args)
     contrastive_optimizer = optax.adam(learning_rate=args.critic_lr)
     
     # create the transition object

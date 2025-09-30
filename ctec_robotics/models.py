@@ -172,6 +172,39 @@ class Aptcritic(nn.Module):
 
 
 
+class MonolithicCritic(nn.Module):
+    args: object
+
+    def setup(self):
+        args = self.args
+        layer_sizes = [args.contrastive_hidden_dim]*args.contrastive_number_hiddens + [1]
+        self.mlp_critic = CRL_MLP(layer_sizes, args.layer_norm_crl,eval(args.activation), spectral_norm=args.spectral_norm)
+
+    def __call__(self, obs, action, future_obs,key, augment=False, train=True):
+        args = self.args
+        x = jnp.concatenate([obs, action], axis=-1)
+        y = future_obs
+        batch_size = x.shape[0]
+        # tile x and y
+        x_tiled = jnp.tile(x[None, :], (batch_size, 1, 1))
+        y_tiled = jnp.tile(y[:, None], (1, batch_size, 1))
+        xy_paris = jnp.concatenate([x_tiled, y_tiled], axis=-1).reshape(batch_size*batch_size, -1)
+        score = self.mlp_critic(xy_paris, train=train)
+        return score.reshape(batch_size, batch_size).T
+
+    def compute_intr_rwd(self, obs, action, future_obs):
+        x = jnp.concatenate([obs, action], axis=-1)
+        y = future_obs
+        return self.mlp_critic(jnp.concatenate([x, y], axis=-1))
+
+
+
+
+
+
+
+
+
 
 ### RND models
 class StateEncoder(nn.Module):

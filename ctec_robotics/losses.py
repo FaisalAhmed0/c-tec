@@ -120,19 +120,22 @@ def make_contrastive_critic_loss(crl_networks, args):
         obs = transitions.observation[:, :args.obs_dim]
         action = transitions.action
         future_obs = transitions.observation[:, args.obs_dim:]
+        if args.use_monolithic_critic:
+            import pdb;pdb.set_trace()
+            logits = critic_network.apply(critic_params, obs, action, future_obs,  key, args.da)
+        else:
+            sa_repr, g_repr, log_temp = critic_network.apply(critic_params, obs, action, future_obs,  key, args.da)
 
-        sa_repr, g_repr, log_temp = critic_network.apply(critic_params, obs, action, future_obs,  key, args.da)
+            ################ Energy function ################
+            similarity_method = {
+                "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1)),
+                "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1),
+                "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr[:, None, :] - g_repr[None, :, :]), axis=-1),
+                "dot": lambda sa_repr, g_repr: jnp.einsum("ik,jk->ij", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
+            }
+            ################ Energy function ################
 
-        ################ Energy function ################
-        similarity_method = {
-            "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1)),
-            "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1),
-            "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr[:, None, :] - g_repr[None, :, :]), axis=-1),
-            "dot": lambda sa_repr, g_repr: jnp.einsum("ik,jk->ij", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
-        }
-        ################ Energy function ################
-
-        logits = similarity_method[args.energy_fn](sa_repr, g_repr)
+            logits = similarity_method[args.energy_fn](sa_repr, g_repr)
 
         ################ Contrastive losses ################
         critic_loss = contrastive_losses()[args.contr_loss](logits)
