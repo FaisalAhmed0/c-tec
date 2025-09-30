@@ -15,15 +15,17 @@ n_steps=128
 
 # Define parameter arrays (all these can have multiple values)
 game_names=("ant_hardest_maze" "humanoid_u_maze" "arm_binpick_hard")
-run_ids=(1 2 3 4 5)
+run_ids=(1 2 3)
 tdd_loss_fns=("infonce_symmetric")
 tdd_energy_fns=("mrn_pot")
+use_ctec_rwds=(0 1)
 
 # Nested loops to construct and run commands for all combinations
 for game_name in "${game_names[@]}"; do
   for run_id in "${run_ids[@]}"; do
     for tdd_loss_fn in "${tdd_loss_fns[@]}"; do
       for tdd_energy_fn in "${tdd_energy_fns[@]}"; do
+      for use_ctec_rwd in "${use_ctec_rwds[@]}"; do
           CMD="sbatch train_tdd src/train.py \
             --use_wandb=${use_wandb} \
             --int_rew_coef=${int_rew_coef} \
@@ -35,6 +37,7 @@ for game_name in "${game_names[@]}"; do
             --env_source=${env_source} \
             --game_name=${game_name} \
             --run_id=${run_id} \
+            --use_ctec_rwd=${use_ctec_rwd} \
             --n_steps=${n_steps} \
             --tdd_loss_fn=${tdd_loss_fn} \
             --tdd_energy_fn=${tdd_energy_fn} \
@@ -46,3 +49,4 @@ for game_name in "${game_names[@]}"; do
       done
     done
   done
+done

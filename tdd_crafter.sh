@@ -15,15 +15,19 @@ n_steps=512
 
 # Define parameter arrays (all these can have multiple values)
 game_names=("crafter")
-run_ids=(1 2 3 4 5)
+run_ids=(1 2 3)
 tdd_loss_fns=("infonce_symmetric")
 tdd_energy_fns=("mrn_pot")
+discounts=(0.99 0.3)
+use_ctec_rwds=(0 1)
 
 # Nested loops to construct and run commands for all combinations
 for game_name in "${game_names[@]}"; do
   for run_id in "${run_ids[@]}"; do
     for tdd_loss_fn in "${tdd_loss_fns[@]}"; do
       for tdd_energy_fn in "${tdd_energy_fns[@]}"; do
+      for discount in "${discounts[@]}"; do
+      for use_ctec_rwd in "${use_ctec_rwds[@]}"; do
           CMD="sbatch train_tdd src/train.py \
             --use_wandb=${use_wandb} \
             --int_rew_coef=${int_rew_coef} \
@@ -32,10 +36,12 @@ for game_name in "${game_names[@]}"; do
             --use_model_rnn=${use_model_rnn} \
             --policy_cnn_type=${policy_cnn_type} \
             --model_cnn_type=${model_cnn_type} \
+            --use_ctec_rwd=${use_ctec_rwd} \
             --env_source=${env_source} \
             --game_name=${game_name} \
             --run_id=${run_id} \
             --n_steps=${n_steps} \
+            --discount=${discount} \
             --tdd_loss_fn=${tdd_loss_fn} \
             --tdd_energy_fn=${tdd_energy_fn} \
             --total_steps=${total_steps} \
@@ -46,3 +52,5 @@ for game_name in "${game_names[@]}"; do
       done
     done
   done
+done
+done
