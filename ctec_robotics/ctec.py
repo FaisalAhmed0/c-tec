@@ -252,7 +252,6 @@ def main(args):
 
     # Make the contrastive critic
     if args.use_monolithic_critic:
-        import pdb;pdb.set_trace()
         contrastive_network = MonolithicCritic(args)
     else:
         contrastive_network = ContrastiveCritic(args)

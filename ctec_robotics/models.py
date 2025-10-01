@@ -195,7 +195,7 @@ class MonolithicCritic(nn.Module):
     def compute_intr_rwd(self, obs, action, future_obs):
         x = jnp.concatenate([obs, action], axis=-1)
         y = future_obs
-        return self.mlp_critic(jnp.concatenate([x, y], axis=-1))
+        return self.mlp_critic(jnp.concatenate([x, y], axis=-1), train=False)
 
 
 

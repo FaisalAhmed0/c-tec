@@ -121,8 +121,14 @@ def make_contrastive_critic_loss(crl_networks, args):
         action = transitions.action
         future_obs = transitions.observation[:, args.obs_dim:]
         if args.use_monolithic_critic:
-            import pdb;pdb.set_trace()
             logits = critic_network.apply(critic_params, obs, action, future_obs,  key, args.da)
+            ################ Contrastive losses ################
+            critic_loss = contrastive_losses()[args.contr_loss](logits)
+            ################ Contrastive losses ################
+            # logsumexp regularisation
+            logsumexp = jax.nn.logsumexp(logits + 1e-6, axis=1)
+            critic_loss += args.logsumexp_penalty_coeff * jnp.mean(logsumexp**2)
+            log_temp = 0
         else:
             sa_repr, g_repr, log_temp = critic_network.apply(critic_params, obs, action, future_obs,  key, args.da)
 
@@ -137,17 +143,17 @@ def make_contrastive_critic_loss(crl_networks, args):
 
             logits = similarity_method[args.energy_fn](sa_repr, g_repr)
 
-        ################ Contrastive losses ################
-        critic_loss = contrastive_losses()[args.contr_loss](logits)
-        ################ Contrastive losses ################
+            ################ Contrastive losses ################
+            critic_loss = contrastive_losses()[args.contr_loss](logits)
+            ################ Contrastive losses ################
 
-        # logsumexp regularisation
-        logsumexp = jax.nn.logsumexp(logits + 1e-6, axis=1)
-        critic_loss += args.logsumexp_penalty_coeff * jnp.mean(logsumexp**2)
+            # logsumexp regularisation
+            logsumexp = jax.nn.logsumexp(logits + 1e-6, axis=1)
+            critic_loss += args.logsumexp_penalty_coeff * jnp.mean(logsumexp**2)
 
-        # l2 regularisation
-        l2_loss = (jnp.mean(sa_repr**2) + jnp.mean(g_repr**2))
-        critic_loss += args.l2_penalty_coeff * l2_loss
+            # l2 regularisation
+            l2_loss = (jnp.mean(sa_repr**2) + jnp.mean(g_repr**2))
+            critic_loss += args.l2_penalty_coeff * l2_loss
 
 
         I = jnp.eye(logits.shape[0])

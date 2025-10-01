@@ -19,7 +19,7 @@ def crl_reward(contrastive_network, contrastive_params, transition: Transition, 
 
     if args.use_monolithic_critic:
         # TODO: figure out how to use add another function to the module and use it instead of using __call__
-        sm = contrastive_network.compute_intr_rwd()
+        sm = contrastive_network.apply(contrastive_params, state, action, goal, method=contrastive_network.compute_intr_rwd).squeeze()
     else:
         sa_repr, g_repr, _ = contrastive_network.apply(contrastive_params, state, action, goal, key_critic, args.da, train=False)
 
