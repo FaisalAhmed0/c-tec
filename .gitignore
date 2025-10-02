@@ -6,5 +6,6 @@ __pycache__
 wandb
 */wandb
 */*/wandb
+logs
 exploration/envs/manipulation/__pycache__/arm_binpick_easy.cpython-310.pyc
 exploration/envs/manipulation/__pycache__/arm_reach.cpython-310.pyc

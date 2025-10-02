@@ -287,7 +287,11 @@ class CTeCModel(IntrinsicRewardBaseModel):
                 obs_embs = th.cat(new_embs, dim=0)
                 obs_history[env_id] = obs_embs
                 phi_x = self.future_state_encoder(obs_history[env_id][:-1])
-                phi_y = self.curr_state_action_encoder(th.cat([obs_history[env_id][-1].unsqueeze(0), next_action[env_id].unsqueeze(0)],dim=-1 ))
+                if len(next_action.shape) == 1:
+                    next_action_emb = F.one_hot(next_action[env_id].long(), num_classes=self.action_num).unsqueeze(0)
+                else:
+                    next_action_emb = next_action[env_id].unsqueeze(0)
+                phi_y = self.curr_state_action_encoder(th.cat([obs_history[env_id][-1].unsqueeze(0), next_action_emb],dim=-1 ))
                 # Compute dists
                 if self.energy_fn == 'l2':
                     dists = th.sqrt(((phi_x[:, None] - phi_y[None, :])**2).sum(dim=-1) + 1e-8)

@@ -20,7 +20,12 @@ ctec_loss_fns=("infonce")
 ctec_energy_fns=("l1" "l2")
 normalize_reprs=(1 0)
 discounts=(0.99 0.3)
-use_etd_rwds=(0 1)
+use_etd_rwds=(1)
+
+
+# Run counter
+run_count=0
+
 
 # Nested loops to construct and run commands for all combinations
 for game_name in "${game_names[@]}"; do
@@ -50,6 +55,8 @@ for game_name in "${game_names[@]}"; do
             --int_rew_source=${int_rew_source} \
             --discount=${discount} \
             --exp_name=\"CTEC_env_${game_name}_discount_${discount}_normalize_repr_${normalize_repr}_ctec_energy_fn_${ctec_energy_fn}_ctec_loss_fn_${ctec_loss_fn}\""
+            # Increment counter
+            run_count=$((run_count + 1))
             eval ${CMD}
           done
           done
@@ -58,3 +65,8 @@ for game_name in "${game_names[@]}"; do
       done
     done
 done
+
+
+echo "====================================="
+echo "All runs finished. Total: $run_count"
+echo "====================================="
