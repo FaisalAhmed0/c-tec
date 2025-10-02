@@ -403,7 +403,7 @@ def visualize_ctec_reward(transition, contrastive_params, key_critic, contrastiv
         sm = similarity_method[args.energy_fn](sa_repr, g_repr)
     reward = -jax.lax.stop_gradient(sm)
     fig = plt.figure()
-    plt.scatter(goal[1:, 0], goal[1:, 1], c=reward[1:], cmap="jet", alpha=0.5)
+    plt.scatter(goal[1:, 0], goal[1:, 1], c=reward[1:], cmap="jet", alpha=0.1)
     plt.colorbar()
     plt.scatter(goal[0, 0], goal[0, 1], c="black", s=100)
     plt.axis("off")

@@ -2,9 +2,9 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_50M_monolithic_critic"
+WANDB_PROJECT_NAME="ctec_50M_monolithic_critic_2"
 RENDER_AGENT="--render_agent"
-contrastive_hidden_dim=1024
+contrastive_hidden_dim=256
 activation="nn.relu"
 NORMALIZE_REP="--normalize_repr"
 LR=0.0003
@@ -20,7 +20,7 @@ checkpoint="--no-checkpoint"
 # BATCH_SIZES=(256)                           
 # NUM_ENVS_VALUES=(256)                      
 ENV_NAMES=("ant_hardest_maze")
-BATCH_SIZES=(1024)                           
+BATCH_SIZES=(256 1024)                           
 NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
 NUM_TIMESTEPS_VALUES=(50000000) 
