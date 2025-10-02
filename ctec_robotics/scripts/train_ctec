@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --partition=main
+#SBATCH --partition=long
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1

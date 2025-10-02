@@ -374,7 +374,48 @@ def render(inf_fun_factory, params, env, exp_dir, exp_name, seed=1, rollout_len=
     
     
     
+
+def visualize_ctec_reward(transition, contrastive_params, key_critic, contrastive_network, args,):
+    # import pdb;pdb.set_trace()
+    state = (transition.observation[:, :, :args.obs_dim]).reshape(-1, args.obs_dim)
+    action = transition.action.reshape(-1, args.action_dim)
+    initil_state = state[0]
+    inital_action = action[0]
+    # tile the initial stae and action 
+    initil_state = jnp.repeat(initil_state[None, :], state.shape[0], axis=0)
+    inital_action = jnp.repeat(inital_action[None, :], state.shape[0], axis=0)
+    future_state = (state[:, :args.obs_dim]).reshape(-1, args.obs_dim)
+    goal = future_state[:, args.crl_goal_indices]
+
+    if args.use_monolithic_critic:
+        # TODO: figure out how to use add another function to the module and use it instead of using __call__
+        sm = contrastive_network.apply(contrastive_params, state, action, goal, method=contrastive_network.compute_intr_rwd).squeeze()
+    else:
+        sa_repr, g_repr, _ = contrastive_network.apply(contrastive_params, state, action, goal, key_critic, args.da, train=False)
+
+        similarity_method = {
+                "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr - g_repr) ** 2, axis=-1)),
+                "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr - g_repr) ** 2, axis=-1),
+                "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr - g_repr), axis=-1),
+                "dot": lambda sa_repr, g_repr: jnp.einsum("hik,hik->hi", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
+            }
+        
+        sm = similarity_method[args.energy_fn](sa_repr, g_repr)
+    reward = -jax.lax.stop_gradient(sm)
+    fig = plt.figure()
+    plt.scatter(goal[1:, 0], goal[1:, 1], c=reward[1:], cmap="jet", alpha=0.5)
+    plt.colorbar()
+    plt.scatter(goal[0, 0], goal[0, 1], c="black", s=100)
+    plt.axis("off")
+    fig.canvas.draw()
+    scatter = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    plt.close("all")
+    return scatter
+
+
     
+
+
 ### Normalization utils
 @jax.jit
 def update_rms(state, x):

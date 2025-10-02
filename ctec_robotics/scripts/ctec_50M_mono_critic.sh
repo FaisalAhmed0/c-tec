@@ -12,6 +12,7 @@ SGD_STEPS_FACTR=1
 ENTROPY_REG="--entropy_reg"
 run_name_suffix="ctec"
 checkpoint="--no-checkpoint"
+use_mono_ciritc="--use_monolithic_critic"
 
 
 
@@ -32,7 +33,7 @@ USE_COMPLETE_FUTURE_STATE_VALUES=("--no-use_complete_future_state")
 CONTR_LOSSES=("infonce")
 EPISODE_LENGTHS=(1000) 
 NORMALIZE_REPS=("--normalize_repr" "--no-normalize_repr")
-energy_fns=("l1" "l2") # contrastive critic function
+energy_fns=("l1") # contrastive critic function
 logsumexp_penalty_coeffs=(0.0)
 contrastive_number_hiddenss=(2)
 discountings_crl=(0.99)
@@ -69,6 +70,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         ${USE_COMPLETE_FUTURE_STATE} \
                                         ${LAYER_NORM} \
                                         ${ENTROPY_REG} \
+                                        ${use_mono_ciritc} \
                                         --multiplier_num_sgd_steps=${SGD_STEPS_FACTR} \
                                         --wandb_project_name=\"${WANDB_PROJECT_NAME}\" \
                                         --batch_size=${BATCH_SIZE} \
@@ -93,6 +95,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         --run_name_suffix=${run_name_suffix} \
                                         --alpha_lr=${LR}"
                                     # Print and execute the command
+                                    # Increment counter
                                     run_count=$((run_count + 1))
                                     eval ${CMD}
                                 done

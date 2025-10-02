@@ -804,7 +804,9 @@ def main(args):
     current_step = 0
 
     videos_indices = np.linspace(0, args.num_evals_after_init-1, args.num_videos).astype(int)
+    reward_visual_indices = np.linspace(0, args.num_evals_after_init-1, args.num_reward_visuals).astype(int)
     print(f"Rendering videos indices: {videos_indices}")
+    print(f"Rendering reward_visual_indices: {reward_visual_indices}")
     
     # training loop!
     # 
@@ -834,7 +836,10 @@ def main(args):
         )
         
         _, sample = replay_buffer.sample(new_state)
-        
+        from utils import visualize_ctec_reward
+        if epoch in reward_visual_indices:
+            scatter_img = visualize_ctec_reward(sample, _unpmap(training_state.contrastive_params), local_key, crl_networks.critic_network, args)
+            wandb.log({"Reward_visual": wandb.Image(scatter_img)}, step=current_step)
         path = os.path.join(run_dir, "buffer_data")
         os.makedirs(path, exist_ok=True)
         

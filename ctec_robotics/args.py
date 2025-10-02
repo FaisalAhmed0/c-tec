@@ -109,6 +109,7 @@ class CTEC_args:
     ema: float=0.999
     save_replay_data: bool = False
     use_monolithic_critic: bool = False
+    num_reward_visuals: int = 50
 
 
 
