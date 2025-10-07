@@ -5,6 +5,22 @@ import numpy as np
 from flax import struct
 from functools import partial
 from typing import Optional, Tuple, Union, Any
+import jax
+import jax.numpy as jnp
+import chex
+import numpy as np
+from flax import struct
+from functools import partial
+from typing import Optional, Tuple, Union, Any
+from gymnax.environments import environment, spaces
+from brax import envs
+from brax.envs.wrappers.training import EpisodeWrapper, AutoResetWrapper
+from envs.ant_maze import AntMaze
+from envs.humanoid_maze import HumanoidMaze
+from envs.simple_maze import SimpleMaze
+from envs.manipulation.arm_binpick_hard import ArmBinpickHard
+from envs.manipulation.arm_binpick_easy import ArmBinpickEasy
+
 
 
 class GymnaxWrapper(object):
@@ -17,6 +33,38 @@ class GymnaxWrapper(object):
     def __getattr__(self, name):
         return getattr(self._env, name)
 
+
+class BraxGymnaxWrapper:
+    def __init__(self, config):
+        env = create_env(config)
+        # env = AntMaze(backend="spring", maze_layout_name=env_name[4:], include_goal_in_obs=False)
+        env = EpisodeWrapper(env, episode_length=1000, action_repeat=1)
+        env = AutoResetWrapper(env)
+        self._env = env
+        self.action_size = env.action_size
+        self.observation_size = (env.observation_size,)
+
+    def reset(self, key, params=None):
+        state = self._env.reset(key)
+        return state.obs, state
+
+    def step(self, key, state, action, params=None):
+        next_state = self._env.step(state, action)
+        return next_state.obs, next_state, next_state.reward, next_state.done > 0.5, {}
+
+    def observation_space(self, params):
+        return spaces.Box(
+            low=-jnp.inf,
+            high=jnp.inf,
+            shape=(self._env.observation_size,),
+        )
+
+    def action_space(self, params):
+        return spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(self._env.action_size,),
+        )
 
 class BatchEnvWrapper(GymnaxWrapper):
     """Batches reset and step functions"""
@@ -198,3 +246,25 @@ class LogWrapper(GymnaxWrapper):
         info["timestep"] = state.timestep
         info["returned_episode"] = done
         return obs, state, reward, done, info
+
+
+
+def create_env(config) -> object:
+    env_name = config["ENV_NAME"]
+    if "maze" in env_name:
+        if "ant" in env_name: 
+            # Possible env_name = {'ant_u_maze', 'ant_big_maze', 'ant_hardest_maze'}
+            env = AntMaze(backend=config["BACKEND"] or "spring", maze_layout_name=env_name[4:], include_goal_in_obs=config["INCLUDE_GOAL_IN_OBS"])
+        elif "humanoid" in env_name:
+            # Possible env_name = {'humanoid_u_maze', 'humanoid_big_maze', 'humanoid_hardest_maze'}
+            env = HumanoidMaze(backend=config["BACKEND"] or "spring", maze_layout_name=env_name[9:], include_goal_in_obs=config["INCLUDE_GOAL_IN_OBS"])
+        else:
+            # Possible env_name = {'simple_u_maze', 'simple_big_maze', 'simple_hardest_maze'}
+            env = SimpleMaze(backend=config["BACKEND"]or "spring", maze_layout_name=env_name[7:])
+    elif env_name == "arm_binpick_easy":
+        env = ArmBinpickEasy(backend=config["BACKEND"] or "mjx", include_goal_in_obs=config["INCLUDE_GOAL_IN_OBS"])
+    elif env_name == "arm_binpick_hard":
+        env = ArmBinpickHard(backend=config["BACKEND"] or "mjx", include_goal_in_obs=["INCLUDE_GOAL_IN_OBS"])
+    else:
+        raise ValueError(f"Unknown environment: {env_name}")
+    return env

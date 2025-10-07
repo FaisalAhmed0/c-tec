@@ -24,6 +24,7 @@ from craftax.craftax_classic.renderer import render_craftax_pixels
 import imageio
 import jax.lax as lax
 import csv
+from envs.ant_maze import AntMaze
 
 def create_csv_logger(env_name, path):
     metrics_to_collect = ["achievements", "episode_return", "max_return_percentage"]
@@ -489,3 +490,78 @@ def save_args(args_dict, path):
     file_path = os.path.join(path, 'args.json') 
     with open(file_path, 'w') as f:
         json.dump(args_dict, f)
+
+
+
+# def create_brax_env(args: argparse.Namespace) -> object:
+#     env_name = "ant_hardest_maze"
+#     env = AntMaze(backend= "spring", maze_layout_name=env_name[4:], include_goal_in_obs=False)
+#     return env
+
+
+from collections import Counter
+import os
+import numpy as np
+from collections import defaultdict
+
+class DiscretizedDensity:
+    def __init__(self, axes=None, bin_width=1.0, goal_dim=2, run_folder=None):
+        self._axes = np.array(axes, dtype=np.int64) if axes is not None else None
+        self._bin_width = float(bin_width)
+        self.goal_dim = goal_dim
+
+        # use dict[int] instead of Counter for lower overhead
+        self.counter = defaultdict(int)
+        self.total_count = 0  # cache total count
+
+        self.run_folder = run_folder
+        if run_folder:
+            self.visual_path = os.path.join(run_folder, "visuals/state_coverage")
+            self.visited_states_path = os.path.join(run_folder, "visited_states")
+            os.makedirs(self.visited_states_path, exist_ok=True)
+            os.makedirs(self.visual_path, exist_ok=True)
+        else:
+            self.visual_path = None
+            self.visited_states_path = None
+
+    def discretize(self, obs):
+        obs = np.asarray(obs, dtype=np.float32)
+        if self._axes is not None:
+            obs = obs[self._axes]
+        obs = np.floor(obs / self._bin_width).astype(np.int64)
+        return tuple(obs) if obs.ndim > 0 else int(obs)
+
+    def update_count(self, batch_obs, env_step=0):
+        batch_obs = np.asarray(batch_obs, dtype=np.float32)
+
+        if self.visited_states_path:
+            np.savez_compressed(f"{self.visited_states_path}/{env_step}", data=batch_obs)
+
+        if self._axes is not None:
+            batch_obs = batch_obs[:, self._axes]
+
+        # discretize in bulk
+        batch_obs = np.floor(batch_obs / self._bin_width).astype(np.int64)
+
+        # update counter more efficiently
+        for obs in map(tuple, batch_obs):
+            self.counter[obs] += 1
+        self.total_count += len(batch_obs)
+
+    def compute_log_prob(self, obs):
+        obs_d = self.discretize(obs)
+        count = self.counter.get(obs_d, 1)
+        if self.total_count == 0:
+            return np.log(1e-8)
+        prob = count / self.total_count
+        return np.log(prob + 1e-8)
+
+    def entropy(self):
+        if self.total_count == 0:
+            return 0.0
+        counts = np.fromiter(self.counter.values(), dtype=np.int64)
+        prob = counts / self.total_count
+        return -np.sum(prob * np.log(prob + 1e-8))
+
+    def num_states(self):
+        return len(self.counter)

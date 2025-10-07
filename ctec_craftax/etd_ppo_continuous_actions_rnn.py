@@ -11,7 +11,7 @@ import numpy as np
 import optax
 import time
 # from argparse
-from args import ctec_rnn_args
+from args import etd_rnn_args
 
 from flax.training import orbax_utils
 from orbax.checkpoint import (
@@ -43,12 +43,16 @@ from logz.batch_logging import create_log_dict, batch_log
 
 from craftax.craftax_env import make_craftax_env_from_name
 from models.contrastive_model import ContrastiveModel, EmpowermentModel
+from models.etd_models import ETDModel
 from losses import contrastive_losses
 from wonderwords import RandomWord
+from wrappers import BraxGymnaxWrapper
+from utils import DiscretizedDensity
 
 # Code adapted from the original implementation made by Chris Lu
 # Original code located at https://github.com/luchris429/purejaxrl
 
+density = DiscretizedDensity()
 
 class ScannedRNN(nn.Module):
     @functools.partial(
@@ -154,24 +158,28 @@ def make_train(config):
     
 
     # Create environment
-    env = make_craftax_env_from_name(
-        config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]
-    )
-    env_params = env.default_params
+    # env = make_craftax_env_from_name(
+    #     config["ENV_NAME"], not config["USE_OPTIMISTIC_RESETS"]
+    # )
+    # env_params = env.default_params
+    # env_name = "ant_hardest_smaze"
+    env = BraxGymnaxWrapper(config)
+    env_params = None
+
 
     # Wrap with some extra logging
     env = LogWrapper(env)
 
-    # Wrap with a batcher, maybe using optimistic resets
-    if config["USE_OPTIMISTIC_RESETS"]:
-        env = OptimisticResetVecEnvWrapper(
-            env,
-            num_envs=config["NUM_ENVS"],
-            reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["NUM_ENVS"]),
-        )
-    else:
-        env = AutoResetEnvWrapper(env)
-        env = BatchEnvWrapper(env, num_envs=config["NUM_ENVS"])
+    # # Wrap with a batcher, maybe using optimistic resets
+    # if config["USE_OPTIMISTIC_RESETS"]:
+    #     env = OptimisticResetVecEnvWrapper(
+    #         env,
+    #         num_envs=config["NUM_ENVS"],
+    #         reset_ratio=min(config["OPTIMISTIC_RESET_RATIO"], config["NUM_ENVS"]),
+    #     )
+    # else:
+    # env = AutoResetEnvWrapper(env)
+    env = BatchEnvWrapper(env, num_envs=config["NUM_ENVS"])
 
     def linear_schedule(count):
         frac = (
@@ -197,6 +205,17 @@ def make_train(config):
         else:
             return config["GAMMA_CL"]
     
+
+    def mrn_distance(x, y):
+        eps = 1e-6
+        d = x.shape[-1]
+        x_prefix = x[..., :d // 2]
+        x_suffix = x[..., d // 2:]
+        y_prefix = y[..., :d // 2]
+        y_suffix = y[..., d // 2:]
+        max_component = jnp.max(jax.nn.relu(x_prefix - y_prefix), axis=-1)
+        l2_component = jnp.sqrt(jnp.square(x_suffix - y_suffix).sum(axis=-1) + eps)
+        return max_component + l2_component
     
     
     similarity_methods = {
@@ -204,6 +223,7 @@ def make_train(config):
             "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1),
             "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr[:, None, :] - g_repr[None, :, :]), axis=-1),
             "dot": lambda sa_repr, g_repr: jnp.einsum("ik,jk->ij", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
+            "mrn": mrn_distance,
         } # for the contrastive loss
     
     similarity_methods_for_rwd = {
@@ -269,7 +289,8 @@ def make_train(config):
 
     def train(rng):
         # INIT NETWORK
-        network = ActorCriticRNN(env.action_space(env_params).n, config=config)
+        import pdb;pdb.set_trace()
+        network = ActorCriticRNN(env.action_space(env_params).shape[0], config=config)
         rng, _rng = jax.random.split(rng)
         init_x = (
             jnp.zeros(
@@ -297,7 +318,7 @@ def make_train(config):
             tx=tx,
         )
 
-        contrastive_network = ContrastiveModel(config)
+        etd_network = ETDModel(config)
         if config["USE_EMPOWERMENT"]:
             emp_network = EmpowermentModel(config)
         
@@ -310,7 +331,7 @@ def make_train(config):
         }
 
         obs_shape = env.observation_space(env_params).shape[0]
-        action_shape = env.action_space(env_params).n
+        action_shape = env.action_space(env_params).shape[0]
         if config["USE_RNN"]:
             dummy_obs = jnp.zeros((1, config["NUM_ENVS"], obs_shape))
             dummy_future_obs = jnp.zeros((1, config["NUM_ENVS"], obs_shape))
@@ -319,13 +340,13 @@ def make_train(config):
             dummy_obs = jnp.zeros((1, obs_shape))
             dummy_future_obs = jnp.zeros((1, obs_shape))
             dummy_action = jnp.zeros((1, action_shape))
-        crl_params = contrastive_network.init(_rng, dummy_obs, dummy_action, dummy_future_obs, jnp.zeros((1, config["NUM_ENVS"])),  init_hstate)
+        crl_params = etd_network.init(_rng, dummy_obs, dummy_action, dummy_future_obs, jnp.zeros((1, config["NUM_ENVS"])),  init_hstate)
         tx = optax.chain(
                 optax.clip_by_global_norm(config["MAX_GRAD_NORM"]), # I am clipping the grad norm, is that necessary?
                 optax.adam(config["CRL_LR"], eps=1e-5), # also what if we used default eps value?
             )
         crl_state["crl_model"] = TrainState.create(
-            apply_fn=contrastive_network.apply,
+            apply_fn=etd_network.apply,
             params=crl_params,
             tx=tx
 
@@ -388,6 +409,7 @@ def make_train(config):
                 obsv, env_state, reward, done, info = env.step(
                     _rng, env_state, action, env_params
                 )
+                import pdb;pdb.set_trace()
                 transition = Transition(
                     last_done, action, value, reward, log_prob, last_obs, info
                 )
@@ -410,6 +432,7 @@ def make_train(config):
             runner_state, traj_batch = jax.lax.scan(
                 _env_step, runner_state, None, config["NUM_STEPS"]
             )
+            import pdb;pdb.set_trace()
             sample_future_vmap = jax.vmap(sample_future_state, in_axes=(None, 1, 1), out_axes=1)
             rng = runner_state[-3]
             future_obs_batch = sample_future_vmap(rng, traj_batch.obs, traj_batch.done)
@@ -436,39 +459,35 @@ def make_train(config):
                 @jax.jit
                 def mc_crl_reward(trans_batch, gamma):
                     trans_batch, future_obs = trans_batch
-                    
                     state = trans_batch.obs
                     action = trans_batch.action
                     dones = trans_batch.done
-
                     T, N, D = state.shape
                     deltas_desc = jnp.arange(T-1, 0, -1)
-                    def one_time(_, t):
-                        s_t = lax.dynamic_index_in_dim(state, t, axis=0, keepdims=False)
-                        a_t = lax.dynamic_index_in_dim(action, t, axis=0, keepdims=False)
-                        a_t = jax.nn.one_hot(a_t, num_classes=action_shape)
-                        
-                        done = lax.dynamic_index_in_dim(dones, t, axis=0, keepdims=False)
-                        def accumulate(r, delta):
-                            
-                            k, valid = t + delta, ((t + delta) < T)
-                            s_k = lax.dynamic_index_in_dim(state, jnp.minimum(k, T-1),
-                                                        axis=0, keepdims=False)
-                            obs_action_rep, future_obs_rep, log_temp, init_hidden = contrastive_network.apply(crl_state["crl_model"].params, s_t, a_t, s_k, None, None)
-                            d2  = similarity_method_for_rwd(obs_action_rep, future_obs_rep)    # (N,)
+                    def compute_min_distance(env_state, next_state):
+                        def body(carry, t):
+                            _ = carry
+                            current_state = env_state[t][None, :]        # (1, D)
+                            dist = mrn_distance(current_state, next_state)  # (T-1,)
 
-                            d2 = jnp.where(~done, d2*valid, 0.0)
-                            return d2 + gamma * r, None
-                        r_t, _ = lax.scan(accumulate, jnp.zeros((N,)), deltas_desc)
-                        norm = (1.0 - gamma ** (T - t)) / (1.0 - gamma) if config["USE_NORM_CONSTANT"] else 1
-                        return _, norm*r_t
-                    _, reward_rev = lax.scan(one_time, None, jnp.arange(T-1, -1, -1))
-                    return reward_rev[::-1]
+                            # mask states after t
+                            mask = jnp.arange(next_state.shape[0]) < t
+                            dist_masked = jnp.where(mask, dist, jnp.inf)
+                            # running minimum
+                            min_distance = jnp.min(dist_masked)
+                            return None, min_distance
+                        init = jnp.inf
+                        _, min_distances = lax.scan(body, None, jnp.arange(T))
+                        min_distances = min_distances.at[0].set(0.0)
+                        return min_distances
+                    reward = jax.vmap(compute_min_distance, in_axes=(1, 1,), out_axes=1)(state, state[1:])
+                    return reward
 
                 def crl_reward(transition, future_obs):
-                    action_onehot = jax.nn.one_hot(transition.action, num_classes=action_shape)
-                    obs_action_rep, future_obs_rep, log_temp, _ = contrastive_network.apply(crl_state["crl_model"].params, transition.obs, action_onehot, future_obs, None, None)
-                    rwd = -similarity_method_for_rwd(obs_action_rep, future_obs_rep)
+                    action_onehot = transition.action
+                    phi_x, phi_y, c_y, _ = etd_network.apply(crl_state["crl_model"].params, transition.obs, action_onehot, future_obs, None, None)
+                    import pdb;pdb.set_trace()
+                    rwd = -similarity_method_for_rwd(phi_x, phi_y)
                     return jax.lax.stop_gradient(rwd)
                 
                 def _get_advantages(carry, transition_batch):
@@ -480,6 +499,7 @@ def make_train(config):
                         transition.value,
                         transition.reward,
                     )
+                    # import pdb;pdb.set_trace()
                     if config["USE_MC_REWARD"]:
                         crl_rewards = ctec_mc_reward
                     else:
@@ -502,11 +522,11 @@ def make_train(config):
                         delta
                         + config["GAMMA"] * config["GAE_LAMBDA"] * (1 - next_done) * gae
                     )
-                    
+                    # jax.debug.print("crl reward in get adv {x}", x=crl_rewards)
                     return (gae, value, done, crl_rewards, task_reward.astype(float), intr_rms_state, extr_rms_state), gae
 
                 
-                crl_rwd_mc = -1 * mc_crl_reward((traj_batch, future_obs), config["GAMMA_CL_REWARD"])
+                crl_rwd_mc = mc_crl_reward((traj_batch, future_obs), config["GAMMA_CL_REWARD"])
                 adv_info, advantages = jax.lax.scan(
                     _get_advantages,
                     (jnp.zeros_like(last_val), last_val, last_done, jnp.zeros_like(last_val), jnp.zeros_like(last_val), intr_rms_state, extr_rms_state),
@@ -531,7 +551,7 @@ def make_train(config):
                     # update the contrastive model
                     def _crl_loss(model_params, traj_batch, future_obs, init_hstate):
                         
-                        action_onehot = jax.nn.one_hot(traj_batch.action, num_classes=action_shape)
+                        action_onehot = traj_batch.action
                         if config["USE_RNN"]:
                             
                             obs_in = traj_batch.obs
@@ -543,21 +563,25 @@ def make_train(config):
                             action_in = action_onehot.reshape(-1, action_shape)
                             future_obs = future_obs.reshape(-1, obs_shape)
                             dones_in = traj_batch.done.reshape(-1, 1)
-                        obs_action_rep, future_obs_rep, log_temp, init_hstate = contrastive_network.apply(model_params, obs_in, action_in, future_obs, dones_in, init_hstate[0])
+                        
+                        phi_x, phi_y, c_y, init_hstate = etd_network.apply(model_params, obs_in, action_in, future_obs, dones_in, init_hstate[0])
+                        # import pdb;pdb.set_trace()
                         if config["USE_RNN"]:
                             obs_action_rep = obs_action_rep.reshape(-1, config["REPR_DIM"])
                             future_obs_rep = future_obs_rep.reshape(-1, config["REPR_DIM"])
-                        sim = similarity_method(obs_action_rep, future_obs_rep)
-                        loss = contrastive_losses()[config["CONTRASTIVE_LOSS"]](sim, config["UPDATE_PROPORTION"], _rng)
+                        # compute the mrn_pot distance
+                        dist = mrn_distance(phi_x[:, None], phi_y[None, :])
+                        logits = c_y.T - dist
+                        loss = contrastive_losses()[config["CONTRASTIVE_LOSS"]](logits, config["UPDATE_PROPORTION"], _rng)
                         # add the regularization term
-                        logsumexp = jax.nn.logsumexp(sim + 1e-6, axis=-1)
+                        logsumexp = jax.nn.logsumexp(logits + 1e-6, axis=-1)
                         loss += config["LOGSUMEXP_PENALTY_COEFF"] * jnp.mean(logsumexp**2)
                         
                         return loss
                     
                     def _emp_loss(model_params, traj_batch, future_obs):
                         
-                        action_onehot = jax.nn.one_hot(traj_batch.action, num_classes=action_shape)
+                        action_onehot = traj_batch.action
                         obs_in = traj_batch.obs.reshape(-1, obs_shape)
                         action_in = action_onehot.reshape(-1, action_shape)
                         future_obs = future_obs.reshape(-1, obs_shape)
@@ -625,6 +649,7 @@ def make_train(config):
                         # update the contrastive model
                         
                         crl_grad_fn = jax.value_and_grad(_crl_loss, has_aux=False)
+                        import pdb;pdb.set_trace()
                         crl_loss, crl_grad = crl_grad_fn(crl_state["crl_model"].params, traj_batch, future_obs_batch, init_hstate)
                         crl_state["crl_model"] = crl_state["crl_model"].apply_gradients(grads=crl_grad)
                         losses = (total_loss, crl_loss)
@@ -700,9 +725,12 @@ def make_train(config):
             metric["crl_loss"] = loss_info[1][1].mean()
             metric["task_reward"] = traj_batch.reward.mean()
             metric["crl_reward"] = adv_info[3].mean()
+            metric["crl_reward_max"] = adv_info[3].max()
+            metric["crl_reward_min"] = adv_info[3].min()
             metric["crl_value"] = adv_info[1].mean()
             metric["crl_value_max"] = adv_info[1].max()
             metric["crl_value_min"] = adv_info[1].min()
+            
               
             online_correlation_state = update_corr_state(online_correlation_state, metric["task_reward"], metric["crl_reward"]) 
             corr = compute_correlation(online_correlation_state)    
@@ -718,14 +746,21 @@ def make_train(config):
             rng = update_state[-2]
             if config["DEBUG"] and config["USE_WANDB"]:
 
-                def callback(metric, update_step):
+                def callback(metric, update_step, traj_batch):
+                    # import pdb;pdb.set_trace()
+                    observations = traj_batch.obs.reshape(-1,traj_batch.obs.shape[-1] )[:, :2]
+                    density.update_count(observations)
+                    # jax.debug.print("state counts {x}", x=density.num_states())
                     if update_step % 10 == 0:
+                        metric["state_counts"] =  density.num_states()
                         to_log = create_log_dict(metric, config)
                         agg_logs = batch_log(update_step, to_log, config)
-                        csv_logger.log(agg_logs)    
+                        csv_logger.log(agg_logs)   
                         
-                    
-                jax.debug.callback(callback, metric, update_step)
+
+                        
+                # import pdb;pdb.set_trace()    
+                jax.debug.callback(callback, metric, update_step, traj_batch)
 
             runner_state = (
                 train_state,
@@ -778,8 +813,7 @@ def run_ppo(config):
             + "-PPO_RNN-CRL"
             + str(int(config["TOTAL_TIMESTEPS"] // 1e6))
             + "M",
-            save_code=False,
-            mode="online"
+            save_code=False
         )
 
     rng = jax.random.PRNGKey(config["SEED"])
@@ -857,7 +891,7 @@ def run_ppo(config):
 
 
 if __name__ == "__main__":
-    args, reset_args = ctec_rnn_args(sys)
+    args, reset_args = etd_rnn_args(sys)
 
     if args.jit:
         run_ppo(args)

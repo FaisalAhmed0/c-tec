@@ -30,12 +30,25 @@ def create_log_dict(info, config):
         to_log["task_reward"] = info["task_reward"] 
     if "crl_reward" in info:
         to_log["crl_reward"] = info["crl_reward"]
+    if "crl_reward_max" in info:
+        to_log["crl_reward_max"] = info["crl_reward_max"]
+    if "crl_reward_min" in info:
+        to_log["crl_reward_min"] = info["crl_reward_min"]
     if "task_intrinisc_correlation" in info:
         to_log["task_intrinisc_correlation"] = info["task_intrinisc_correlation"]
     if "relative_scale" in info:
         to_log["relative_scale"] = info["relative_scale"] 
     if "gamma_cl" in info:
         to_log["gamma_cl"] = info["gamma_cl"]
+    if "crl_value" in info:
+        to_log["crl_value"] = info["crl_value"]
+    if "crl_value_max" in info: 
+        to_log["crl_value_max"] = info["crl_value_max"]
+    if "crl_value_min" in info:
+        to_log["crl_value_min"] = info["crl_value_min"]
+    if "state_counts" in info:
+        to_log["state_counts"] = info["state_counts"]
+        
 
     sum_achievements = 0
     for k, v in info.items():
@@ -94,7 +107,10 @@ def batch_log(update_step, log, config):
                 else:
                     agg_logs[key] = np.array(agg)
                 if "return" in key:
-                    agg_logs["max_return_percentage"] = compute_max_return_percentage(agg_logs[key].item(), config["ENV_NAME"])
+                    try:
+                        agg_logs["max_return_percentage"] = compute_max_return_percentage(agg_logs[key].item(), config["ENV_NAME"])
+                    except:
+                        pass
 
         log_times.append(time.time())
 
@@ -108,6 +124,6 @@ def batch_log(update_step, log, config):
                 )
                 sps = steps_between_updates / dt
                 agg_logs["sps"] = sps
-
+        # import pdb;pdb.set_trace()
         wandb.log(agg_logs)
         return agg_logs
