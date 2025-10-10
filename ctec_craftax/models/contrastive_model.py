@@ -285,3 +285,73 @@ class EmpowermentModel(nn.Module):
         future_obs_rep2 = self.future_obs_encoder2(future_obs)        
 
         return obs_action_rep, obs_rep, future_obs_rep1, future_obs_rep2, self.obs_action_encoder.log_temperature
+
+
+
+class AtariCNN(nn.Module):
+    @nn.compact
+    def __call__(self, obs):
+        x = obs
+        x = nn.Conv(features=32, kernel_size=(8, 8), strides=(4, 4))(x)
+        x = nn.relu(x)
+
+        x = nn.Conv(features=64, kernel_size=(4, 4), strides=(2, 2))(x)
+        x = nn.relu(x)
+
+        x = nn.Conv(features=64, kernel_size=(3, 3), strides=(1, 1))(x)
+        x = nn.relu(x)
+
+        x = x.reshape((x.shape[0], -1))  # Flatten
+        x = nn.Dense(features=512)(x)
+        x = nn.relu(x)
+
+        embedding = x.reshape(x.shape[0], -1)
+        return embedding
+
+
+
+class CNN(nn.Module):
+    @nn.compact
+    def __call__(self, obs):
+        x = nn.Conv(features=32, kernel_size=(5, 5))(obs)
+        x = nn.relu(x)
+        x = nn.max_pool(x, window_shape=(3, 3), strides=(3, 3))
+        x = nn.Conv(features=32, kernel_size=(5, 5))(x)
+        x = nn.relu(x)
+        x = nn.max_pool(x, window_shape=(3, 3), strides=(3, 3))
+        x = nn.Conv(features=32, kernel_size=(5, 5))(x)
+        x = nn.relu(x)
+        x = nn.max_pool(x, window_shape=(3, 3), strides=(3, 3))
+
+        embedding = x.reshape(x.shape[0], -1)
+        return embedding
+
+class ContrastiveModelConv(nn.Module):
+    config: object
+
+    # def setup(self):
+    #     config = self.config
+    #     # setup the state encoder, forward model and backward model
+    #     self.obs_action_encoder = SA_encoder(config)
+    #     self.future_obs_encoder = S_encoder(config)
+
+    @nn.compact
+    def __call__(self, obs, action, future_obs, dones, hidden_state):
+        config = self.config
+        try:
+            if config["CNN_ARCH"] == "atari":
+                cnn = AtariCNN()
+            else:
+                cnn = CNN()
+        except: 
+            cnn = CNN()
+        state_embedding = cnn(obs)
+        future_state_embedding = cnn(future_obs)
+        
+        # update the mean and the std of the observations
+        sa_encoder = SA_encoder(config)
+        s_encoder = S_encoder(config)
+        obs_action_rep = sa_encoder(state_embedding, action)
+        future_obs_rep = s_encoder(future_state_embedding)
+
+        return obs_action_rep, future_obs_rep, sa_encoder.log_temperature, hidden_state

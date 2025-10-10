@@ -81,11 +81,29 @@ class ActorCriticConvSymbolicCraftax(nn.Module):
         return pi, jnp.squeeze(critic, axis=-1)
 
 
-class ActorCriticConv(nn.Module):
-    action_dim: Sequence[int]
-    layer_width: int
-    activation: str = "tanh"
+class AtariCNN(nn.Module):
+    @nn.compact
+    def __call__(self, obs):
+        x = obs
+        x = nn.Conv(features=32, kernel_size=(8, 8), strides=(4, 4))(x)
+        x = nn.relu(x)
 
+        x = nn.Conv(features=64, kernel_size=(4, 4), strides=(2, 2))(x)
+        x = nn.relu(x)
+
+        x = nn.Conv(features=64, kernel_size=(3, 3), strides=(1, 1))(x)
+        x = nn.relu(x)
+
+        x = x.reshape((x.shape[0], -1))  # Flatten
+        x = nn.Dense(features=512)(x)
+        x = nn.relu(x)
+
+        embedding = x.reshape(x.shape[0], -1)
+        return embedding
+
+
+
+class CNN(nn.Module):
     @nn.compact
     def __call__(self, obs):
         x = nn.Conv(features=32, kernel_size=(5, 5))(obs)
@@ -99,7 +117,27 @@ class ActorCriticConv(nn.Module):
         x = nn.max_pool(x, window_shape=(3, 3), strides=(3, 3))
 
         embedding = x.reshape(x.shape[0], -1)
+        return embedding
 
+
+
+class ActorCriticConv(nn.Module):
+    action_dim: Sequence[int]
+    layer_width: int
+    config: object
+    activation: str = "tanh"
+
+    @nn.compact
+    def __call__(self, obs):
+        config = self.config
+        try:
+            if config["CNN_ARCH"] == "atari":
+                cnn = AtariCNN()
+            else:
+                cnn = CNN()
+        except: 
+            cnn = CNN()
+        embedding = cnn(obs)
         actor_mean = nn.Dense(
             self.layer_width, kernel_init=orthogonal(2), bias_init=constant(0.0)
         )(embedding)

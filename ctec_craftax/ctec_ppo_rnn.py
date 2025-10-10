@@ -45,9 +45,12 @@ from craftax.craftax_env import make_craftax_env_from_name
 from models.contrastive_model import ContrastiveModel, EmpowermentModel
 from losses import contrastive_losses
 from wonderwords import RandomWord
-
-# Code adapted from the original implementation made by Chris Lu
-# Original code located at https://github.com/luchris429/purejaxrl
+### imports for the atari environments from envpool
+import gym
+import jax.numpy as jnp
+from jax import jit, lax
+from packaging import version
+import envpool
 
 
 class ScannedRNN(nn.Module):
@@ -506,7 +509,7 @@ def make_train(config):
                     return (gae, value, done, crl_rewards, task_reward.astype(float), intr_rms_state, extr_rms_state), gae
 
                 
-                crl_rwd_mc = -1 * mc_crl_reward((traj_batch, future_obs), config["GAMMA_CL_REWARD"])
+                crl_rwd_mc = -1 * jax.lax.stop_gradient(mc_crl_reward((traj_batch, future_obs), config["GAMMA_CL_REWARD"]))
                 adv_info, advantages = jax.lax.scan(
                     _get_advantages,
                     (jnp.zeros_like(last_val), last_val, last_done, jnp.zeros_like(last_val), jnp.zeros_like(last_val), intr_rms_state, extr_rms_state),
@@ -832,7 +835,6 @@ def run_ppo(config):
     
     wandb_bar_chart(labels, values)
     
-
     if config["USE_WANDB"]:
 
         def _save_network(rs_index, dir_name):
@@ -852,7 +854,6 @@ def run_ppo(config):
 
         if config["SAVE_POLICY"]:
             _save_network(0, "policies")
-
             visualize_agent_rnn(wandb.run.dir, args)
 
 

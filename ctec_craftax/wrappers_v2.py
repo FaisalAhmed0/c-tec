@@ -65,6 +65,7 @@ class BraxGymnaxWrapper:
             high=1.0,
             shape=(self._env.action_size,),
         )
+
 from gymnax.environments import spaces, environment
 class AtariGymWrapper:
     def __init__(self, env):
@@ -73,18 +74,14 @@ class AtariGymWrapper:
         self.observation_size = (env.observation_size)
 
     def reset(self, key, params=None):
-        print("AtariGymWrapper resetting the enviornment")
-        state, handle = self._env.reset(key)
+        state = self._env.reset(key)
         # import pdb;pdb.set_trace()
-        return state[0], handle
+        return state[0], state[1]
 
-    def step(self, key, state, handle, action, params=None):
-        print("AtariGymWrapper resetting the enviornment")
-        # import pdb;pdb.set_trace()
-        next_state = self._env.step(state, handle, action)
-        new_states, rew, done, info, handle = next_state
-        # import pdb;pdb.set_trace()
-        return new_states, rew, done, info, handle
+    def step(self, key, state, action, params=None):
+        next_state = self._env.step(state, action)
+        new_states, rew, done, info = next_state
+        return new_states, rew, done, info
 
     def observation_space(self, params=None):
         return spaces.Box(
@@ -95,7 +92,7 @@ class AtariGymWrapper:
 
     def action_space(self, params=None):
         return spaces.Discrete(self.action_size)
-
+    
 
 
 class BatchEnvWrapper(GymnaxWrapper):
@@ -236,7 +233,53 @@ class LogEnvState:
     returned_episode_returns: float
     returned_episode_lengths: int
     timestep: int
+    handle: Any
 
+
+class AtariLogWrapper(GymnaxWrapper):
+    """Log the episode returns and lengths."""
+
+    def __init__(self, env, num_envs):
+        super().__init__(env)
+        self.num_envs = num_envs
+
+    @partial(jax.jit, static_argnums=(0, 2))
+    def reset(self, key: chex.PRNGKey, params=None):
+        obs, handle = self._env.reset(key, params)
+        float_init = jnp.zeros(shape=(self.num_envs, ), dtype=jnp.float32)
+        int_init = jnp.zeros(shape=(self.num_envs, ), dtype=jnp.int32)
+        state = LogEnvState(obs, float_init, int_init, float_init, int_init, int_init, handle)
+        return obs, state
+
+    @partial(jax.jit, static_argnums=(0, 4))
+    def step(
+        self,
+        key: chex.PRNGKey,
+        state,
+        action: Union[int, float],
+        params=None,
+    ):
+        obs, reward, done, info, new_handle = self._env.step(
+            key, state.env_state, state.handle, action, params
+        )
+        new_episode_return = state.episode_returns + reward
+        new_episode_length = state.episode_lengths + 1
+        state = LogEnvState(
+            env_state=obs,
+            handle=new_handle,
+            episode_returns=new_episode_return * (1 - done),
+            episode_lengths=new_episode_length * (1 - done),
+            returned_episode_returns=state.returned_episode_returns * (1 - done)
+            + new_episode_return * done,
+            returned_episode_lengths=state.returned_episode_lengths * (1 - done)
+            + new_episode_length * done,
+            timestep=state.timestep + 1,
+        )
+        info["returned_episode_returns"] = state.returned_episode_returns
+        info["returned_episode_lengths"] = state.returned_episode_lengths
+        info["timestep"] = state.timestep
+        info["returned_episode"] = done
+        return obs, state, reward, done, info
 
 class LogWrapper(GymnaxWrapper):
     """Log the episode returns and lengths."""
@@ -258,13 +301,13 @@ class LogWrapper(GymnaxWrapper):
         action: Union[int, float],
         params=None,
     ):
-        obs, env_state, reward, done, info = self._env.step(
+        obs, reward, done, info = self._env.step(
             key, state.env_state, action, params
         )
         new_episode_return = state.episode_returns + reward
         new_episode_length = state.episode_lengths + 1
         state = LogEnvState(
-            env_state=env_state,
+            env_state=obs,
             episode_returns=new_episode_return * (1 - done),
             episode_lengths=new_episode_length * (1 - done),
             returned_episode_returns=state.returned_episode_returns * (1 - done)

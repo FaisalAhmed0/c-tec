@@ -144,7 +144,8 @@ def ctec_ppo_args(sys):
     parser.add_argument("--vf_coef", type=float, default=0.5)
     parser.add_argument("--max_grad_norm", type=float, default=1.0)
     parser.add_argument("--activation", type=str, default="tanh")
-    parser.add_argument("--`agent`", type=str, default="ctec_ppo")
+    parser.add_argument("--agent", type=str, default="ctec_ppo")
+    parser.add_argument("--cnn_arch", type=str, default="craftax")
     parser.add_argument(
         "--anneal_lr", action=argparse.BooleanOptionalAction, default=True
     )
@@ -274,7 +275,7 @@ def ctec_rnn_args(sys):
         "--use_wandb", action=argparse.BooleanOptionalAction, default=True
     )
     parser.add_argument(
-        "--save_policy", action=argparse.BooleanOptionalAction, default=False
+        "--save_policy", action=argparse.BooleanOptionalAction, default=True
     )
     parser.add_argument("--num_repeats", type=int, default=1)
     parser.add_argument("--layer_size", type=int, default=512)

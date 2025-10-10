@@ -354,7 +354,7 @@ def visualize_agent_rnn(path, args=None):
     )
 
     train_state = checkpoint_manager.restore(
-        0, items=train_state
+        args.ckpt_num, items=train_state
     )
 
     obs, env_state = env.reset(key=_rng)
