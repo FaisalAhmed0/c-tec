@@ -17,6 +17,7 @@ from flax.linen.initializers import variance_scaling, orthogonal, constant
 from dataclasses import field
 from typing import Any, Callable, Sequence, Tuple
 from losses import contrastive_losses
+import tyro
 
 
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
@@ -246,7 +247,7 @@ def make_train(config):
         config["NUM_ENVS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
     )
     if config["ATARI_ENV"]:
-        env = envpool.make_gym("Breakout-v5", num_envs=config["NUM_ENVS"], episodic_life=True,
+        env = envpool.make_gym(config["ENV_NAME"], num_envs=config["NUM_ENVS"], episodic_life=True,
         reward_clip=True,)
     else:
         env, env_params = gymnax.make(config["ENV_NAME"])
@@ -256,7 +257,8 @@ def make_train(config):
     if config["USE_WANDB"]:
         wandb.init(
             project="pure-jax-rl",
-            mode="online"
+            mode="online", 
+            config=config,
         )
 
     def linear_schedule(count):
@@ -403,7 +405,7 @@ def make_train(config):
         def _update_step(runner_state, unused):
             # COLLECT TRAJECTORIES
             def _env_step(runner_state, unused):
-                train_state, env_state, last_obs, rng, crl_state = runner_state
+                train_state, env_state, last_obs, rng, crl_state, update_step = runner_state
 
                 # SELECT ACTION
                 rng, _rng = jax.random.split(rng)
@@ -434,7 +436,7 @@ def make_train(config):
                     info["returned_episode_lengths"] = env_state.returned_episode_lengths
                     info["timestep"] = env_state.timestep
                     info["returned_episode"] = done
-                    print("logging seems to work")
+                    # print("logging seems to work")
                     # import pdb;pdb.set_trace()
                 else:
                     obsv, env_state, reward, done, info = jax.vmap(
@@ -443,17 +445,17 @@ def make_train(config):
                 transition = Transition(
                     done, action, value, reward, log_prob, last_obs, info
                 )
-                runner_state = (train_state, env_state, obsv, rng, crl_state)
+                runner_state = (train_state, env_state, obsv, rng, crl_state, update_step)
                 return runner_state, transition
 
             runner_state, traj_batch = jax.lax.scan(
                 _env_step, runner_state, None, config["NUM_STEPS"]
             )
             sample_future_vmap = jax.vmap(sample_future_state, in_axes=(None, 1, 1), out_axes=1)
-            future_obs_batch = sample_future_vmap(runner_state[-2], traj_batch.obs, traj_batch.done)
+            future_obs_batch = sample_future_vmap(runner_state[-3], traj_batch.obs, traj_batch.done)
             
             # CALCULATE ADVANTAGE
-            train_state, env_state, last_obs, rng, crl_state = runner_state
+            train_state, env_state, last_obs, rng, crl_state, update_step = runner_state
             _, last_val = network.apply(train_state.params, last_obs)
 
             def _calculate_gae(traj_batch, future_obs, last_val):
@@ -642,36 +644,39 @@ def make_train(config):
             metric["crl_value_min"] = adv_info[1].min()
             # Debugging mode
             if config.get("DEBUG"):
-                def callback(info):
-                    # import pdb;pdb.set_trace()
+                def callback(info, update_step):
                     logs = {}
-                    return_values = (info["returned_episode_returns"][info["returned_episode"]]).mean()
-                    episdoe_length = (info["returned_episode_lengths"][info["returned_episode"]]).mean()
-                    timesteps = info["timestep"][info["returned_episode"]] * config["NUM_ENVS"]
-                    # import pdb;pdb.set_trace()
-                    logs["episdoe_length"] = episdoe_length
-                    logs["crl_loss"] = info["crl_loss"].item()
-                    logs["task_reward"] = info["task_reward"].item()
-                    logs["crl_reward"] = info["crl_reward"].item()
-                    logs["crl_reward_max"] = info["crl_reward_max"].item()
-                    logs["crl_reward_min"] = info["crl_reward_min"].item()
-                    logs["crl_value"] = info["crl_value"].item()
-                    logs["crl_value_max"] = info["crl_value_max"].item()
-                    logs["crl_value_min"] = info["crl_value_min"].item()
-                    logs["mean_episode_return"] = return_values
-                    # import pdb;pdb.set_trace()
+                    if info["returned_episode"].sum() > 0:
+                        return_values = (info["returned_episode_returns"][info["returned_episode"]]).mean()
+                    else:
+                        return_values = 0
+                    if info["returned_episode"].sum() > 0:
+                        episdoe_length = (info["returned_episode_lengths"][info["returned_episode"]]).mean()
+                    else:
+                        episdoe_length = 0
+                    timesteps = info["timestep"].max() * config["NUM_ENVS"]
+                    logs["charts/episdoe_length"] = episdoe_length
+                    logs["losses/crl_loss"] = info["crl_loss"].item()
+                    logs["charts/task_reward"] = info["task_reward"].item()
+                    logs["charts/crl_reward"] = info["crl_reward"].item()
+                    logs["charts/crl_reward_max"] = info["crl_reward_max"].item()
+                    logs["charts/crl_reward_min"] = info["crl_reward_min"].item()
+                    logs["charts/crl_value"] = info["crl_value"].item()
+                    logs["charts/crl_value_max"] = info["crl_value_max"].item()
+                    logs["charts/crl_value_min"] = info["crl_value_min"].item()
+                    logs["charts/mean_episode_return"] = return_values
                     if config["USE_WANDB"]:
-                        wandb.log(logs, step=timesteps[-1])
+                        wandb.log(logs, step=timesteps)
                     
         
                 # import pdb;pdb.set_trace()
-                jax.debug.callback(callback, metric)
+                jax.debug.callback(callback, metric, update_step)
 
-            runner_state = (train_state, env_state, last_obs, rng, crl_state)
+            runner_state = (train_state, env_state, last_obs, rng, crl_state, update_step+1)
             return runner_state, metric
 
         rng, _rng = jax.random.split(rng)
-        runner_state = (train_state, env_state, obsv, _rng, crl_state)
+        runner_state = (train_state, env_state, obsv, _rng, crl_state, 0)
         runner_state, metric = jax.lax.scan(
             _update_step, runner_state, None, config["NUM_UPDATES"]
         )
@@ -681,45 +686,51 @@ def make_train(config):
 
 
 if __name__ == "__main__":
-    config = {
-        "LR": 2.5e-4,
-        "NUM_ENVS": 512,
-        "NUM_STEPS": 64,
-        "TOTAL_TIMESTEPS": 50e6,
-        "UPDATE_EPOCHS": 4,
-        "NUM_MINIBATCHES": 8,
-        "GAMMA": 0.99,
-        "GAE_LAMBDA": 0.8,
-        "CLIP_EPS": 0.2,
-        "ENT_COEF": 0.01,
-        "VF_COEF": 0.5,
-        "MAX_GRAD_NORM": 1.0,
-        "ACTIVATION": "tanh",
-        "ENV_NAME": "CartPole-v1",
-        "ANNEAL_LR": True,
-        "DEBUG": True,
-        "ATARI_ENV": True,
-        "USE_WANDB": True,
-        "SIMILARITY_MEASURE": "l2",
-        "USE_ACTION_IN_CL": True,
-        "FIX_TEMP": False,
-        "TEMP_VALUE": 1.0,
-        "CONTRASTIVE_HIDDEN_DIM": 2048,
-        "CONTRASTIVE_NUMBER_HIDDENS": 4,
-        "REPR_DIM": 64,
-        "USE_LAYER_NORM": False,
-        "ACTIVATION_CRL": "nn.relu",
-        "USE_NORMALIZE_REPR": True,
-        "CRL_LR": 3e-4,
-        "GAMMA_CL": 0.99,
-        "GAMMA_CL_REWARD": 0.99,
-        "CRL_REWARD_COEF": 1.0,
-        "TASK_REWARD_COEF": 0,
-        "USE_NORM_CONSTANT": False,
-        "CONTRASTIVE_LOSS": "infonce",
-        "UPDATE_PROPORTION": 1,
-        "LOGSUMEXP_PENALTY_COEFF": 0.0
-    }
-    rng = jax.random.PRNGKey(30)
+    from dataclasses import dataclass
+
+    @dataclass
+    class Args:
+        lr: float = 2.5e-4
+        seed: int = 0
+        num_envs: int = 512
+        num_steps: int = 64
+        total_timesteps: float = 50e6
+        update_epochs: int = 4
+        num_minibatches: int = 8
+        gamma: float = 0.99
+        gae_lambda: float = 0.8
+        clip_eps: float = 0.1
+        ent_coef: float = 0.01
+        vf_coef: float = 0.5
+        max_grad_norm: float = 1.0
+        activation: str = "tanh"
+        env_name: str = "Pong-v5"
+        anneal_lr: bool = True
+        debug: bool = True
+        atari_env: bool = True
+        use_wandb: bool = True
+        similarity_measure: str = "l2"
+        use_action_in_cl: bool = True
+        fix_temp: bool = False
+        temp_value: float = 1.0
+        contrastive_hidden_dim: int = 2048
+        contrastive_number_hiddens: int = 4
+        repr_dim: int = 64
+        use_layer_norm: bool = False
+        activation_crl: str = "nn.relu"
+        use_normalize_repr: bool = True
+        crl_lr: float = 3e-4
+        gamma_cl: float = 0.99
+        gamma_cl_reward: float = 0.99
+        crl_reward_coef: float = 1.0
+        task_reward_coef: float = 0.0
+        use_norm_constant: bool = False
+        contrastive_loss: str = "infonce"
+        update_proportion: int = 1
+        logsumexp_penalty_coeff: float = 0.0
+
+    config = tyro.cli(Args)
+    config = {k.upper(): v for k, v in config.__dict__.items()}
+    rng = jax.random.PRNGKey(config["SEED"])
     train_jit = jax.jit(make_train(config))
     out = train_jit(rng)
