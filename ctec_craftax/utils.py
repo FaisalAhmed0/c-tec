@@ -268,16 +268,17 @@ def visualize_agent(path):
     return save_name
 
 
-def visualize_agent_rnn(path, args=None):
-    with open(os.path.join(path, "config.yaml")) as f:
-        raw_config = yaml.load(f, Loader=yaml.Loader)
+def visualize_agent_rnn(path, config=None, args=None, log_to_wandb=False):
+    if config is None:
+        with open(os.path.join(path, "config.yaml")) as f:
+            raw_config = yaml.load(f, Loader=yaml.Loader)
 
-        config = {}
-        for key, value in raw_config.items():
-            if isinstance(value, dict) and "value" in value:
-                config[f"{key}"] = value["value"]
-                if isinstance(config[f"{key}"], dict):
-                    config[f"{key}"] = 0
+            config = {}
+            for key, value in raw_config.items():
+                if isinstance(value, dict) and "value" in value:
+                    config[f"{key}"] = value["value"]
+                    if isinstance(config[f"{key}"], dict):
+                        config[f"{key}"] = 0
 
     config["NUM_ENVS"] = 1
     # import pdb;pdb.set_trace()
@@ -354,7 +355,7 @@ def visualize_agent_rnn(path, args=None):
     )
 
     train_state = checkpoint_manager.restore(
-        args.ckpt_num, items=train_state
+        int(config["TOTAL_TIMESTEPS"]), items=train_state
     )
 
     obs, env_state = env.reset(key=_rng)
@@ -394,12 +395,16 @@ def visualize_agent_rnn(path, args=None):
         save_name = os.path.join(save_path, args.save_name) 
         print(f"saveing to : {save_name}")
         imageio.mimsave(save_name, jnp.array(frames[:-1]).astype(jnp.uint8)) 
+        if log_to_wandb:
+            wandb.log({"Agent Video": wandb.Image(save_name, fps=10, format="gif")})
         return save_name
     else:
         os.makedirs(os.path.join(path, "videos"), exist_ok=True)
         save_path = os.path.join(path, "videos")
         save_name = os.path.join(save_path, "agent_visual.gif") 
         imageio.mimsave(save_name, jnp.array(frames[:-1]).astype(jnp.uint8)) 
+        if log_to_wandb:
+            wandb.log({"Agent Video": wandb.Image(save_name)})
         return save_name
 
 

@@ -10,6 +10,7 @@ import flax.linen as nn
 import numpy as np
 import optax
 import time
+from copy import deepcopy
 # from argparse
 from args import ctec_rnn_args
 
@@ -220,6 +221,7 @@ def make_train(config):
     similarity_method_for_rwd = similarity_methods_for_rwd[config["SIMILARITY_MEASURE"]]
     csv_logger_path = os.path.join(config["RUN_DIR"], "logs.csv") 
     csv_logger = create_csv_logger(config["ENV_NAME"], csv_logger_path)
+    config_copy = deepcopy(config)
     
 
     def sample_future_state(rng, obs, dones):
@@ -323,10 +325,16 @@ def make_train(config):
             dummy_future_obs = jnp.zeros((1, obs_shape))
             dummy_action = jnp.zeros((1, action_shape))
         crl_params = contrastive_network.init(_rng, dummy_obs, dummy_action, dummy_future_obs, jnp.zeros((1, config["NUM_ENVS"])),  init_hstate)
-        tx = optax.chain(
-                optax.clip_by_global_norm(config["MAX_GRAD_NORM"]), # I am clipping the grad norm, is that necessary?
-                optax.adam(config["CRL_LR"], eps=1e-5), # also what if we used default eps value?
-            )
+        if config["ANNEAL_CRL_LR"]:
+            tx = optax.chain(
+                    optax.clip_by_global_norm(config["MAX_GRAD_NORM"]), # I am clipping the grad norm, is that necessary?
+                    optax.adam(learning_rate=linear_schedule, eps=1e-5), # also what if we used default eps value?
+                )
+        else:
+            tx = optax.chain(
+                    optax.clip_by_global_norm(config["MAX_GRAD_NORM"]), # I am clipping the grad norm, is that necessary?
+                    optax.adam(config["CRL_LR"], eps=1e-5), # also what if we used default eps value?
+                )
         crl_state["crl_model"] = TrainState.create(
             apply_fn=contrastive_network.apply,
             params=crl_params,
@@ -720,15 +728,33 @@ def make_train(config):
 
             rng = update_state[-2]
             if config["DEBUG"] and config["USE_WANDB"]:
-
                 def callback(metric, update_step):
                     if update_step % 10 == 0:
                         to_log = create_log_dict(metric, config)
                         agg_logs = batch_log(update_step, to_log, config)
                         csv_logger.log(agg_logs)    
-                        
-                    
+
+                def _save_network(training_state, update_step):
+                    if (update_step+1) % config["VIDEO_LOG_FREQ"] == 0:
+                        dir_name="policies"
+                        base_path = config["CHECKPOINT_DIR"]
+                        train_states = training_state
+                        train_state = jax.tree.map(lambda x: x, train_states)
+                        orbax_checkpointer = PyTreeCheckpointer()
+                        options = CheckpointManagerOptions(max_to_keep=1, create=True)
+                        path = os.path.join(base_path, dir_name)
+                        checkpoint_manager = CheckpointManager(path, orbax_checkpointer, options)
+                        print(f"saved runner state to {path}")
+                        save_args = orbax_utils.save_args_from_target(train_state)
+                        checkpoint_manager.save(
+                            int(config["TOTAL_TIMESTEPS"]),
+                            train_state,
+                            save_kwargs={"save_args": save_args},
+                        )
+                        visualize_agent_rnn(config["CHECKPOINT_DIR"], config=config_copy, log_to_wandb=True)
+
                 jax.debug.callback(callback, metric, update_step)
+                jax.debug.callback(_save_network, train_state, update_step)
 
             runner_state = (
                 train_state,
@@ -854,7 +880,7 @@ def run_ppo(config):
 
         if config["SAVE_POLICY"]:
             _save_network(0, "policies")
-            visualize_agent_rnn(wandb.run.dir, args)
+            visualize_agent_rnn(config["CHECKPOINT_DIR"], config=config, log_to_wandb=True)
 
 
 if __name__ == "__main__":

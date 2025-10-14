@@ -247,6 +247,7 @@ def ctec_rnn_args(sys):
     parser.add_argument("--model", type=str, default="crl_ppo_rnn")
     parser.add_argument("--agent", type=str, default="crl_ppo_rnn")
     parser.add_argument("--run_name_suffix", type=str, default="")
+    parser.add_argument("--video_log_freq", type=int, default=100)
     parser.add_argument(
         "--num_envs",
         type=int,
@@ -267,6 +268,9 @@ def ctec_rnn_args(sys):
     parser.add_argument("--activation", type=str, default="tanh")
     parser.add_argument(
         "--anneal_lr", action=argparse.BooleanOptionalAction, default=True
+    )
+    parser.add_argument(
+        "--anneal_crl_lr", action=argparse.BooleanOptionalAction, default=True
     )
     parser.add_argument("--debug", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--jit", action=argparse.BooleanOptionalAction, default=True)
