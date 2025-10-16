@@ -30,7 +30,7 @@ bias_init = nn.initializers.zeros
 class AtariCNN(nn.Module):
     @nn.compact
     def __call__(self, obs):
-        x = obs
+        x = obs/255.0
         x = nn.Conv(features=32, kernel_size=(8, 8), strides=(4, 4))(x)
         x = nn.relu(x)
 
@@ -248,7 +248,8 @@ def make_train(config):
     )
     if config["ATARI_ENV"]:
         env = envpool.make_gym(config["ENV_NAME"], num_envs=config["NUM_ENVS"], episodic_life=True,
-        reward_clip=True,)
+        reward_clip=True,stack_num=config["FRAME_STACK"])
+        # import pdb;pdb.set_trace()
     else:
         env, env_params = gymnax.make(config["ENV_NAME"])
         env = FlattenObservationWrapper(env)
@@ -256,7 +257,7 @@ def make_train(config):
 
     if config["USE_WANDB"]:
         wandb.init(
-            project="pure-jax-rl",
+            project=config["WANDB_PROJECT"],
             mode="online", 
             config=config,
         )
@@ -339,7 +340,7 @@ def make_train(config):
         dummy_obs = jnp.zeros((1, *obs_shape))
         dummy_future_obs = jnp.zeros((1, *obs_shape))
         dummy_action = jnp.zeros((1, action_shape))
-
+        # import pdb;pdb.set_trace()
         # initilize models
         network_params = network.init(_rng, init_x)
         crl_params = contrastive_network.init(_rng, dummy_obs, dummy_action, dummy_future_obs, jnp.zeros((1, config["NUM_ENVS"])))
@@ -648,14 +649,11 @@ def make_train(config):
                     logs = {}
                     if info["returned_episode"].sum() > 0:
                         return_values = (info["returned_episode_returns"][info["returned_episode"]]).mean()
-                    else:
-                        return_values = 0
+                        logs["charts/mean_episode_return"] = return_values
                     if info["returned_episode"].sum() > 0:
                         episdoe_length = (info["returned_episode_lengths"][info["returned_episode"]]).mean()
-                    else:
-                        episdoe_length = 0
+                        logs["charts/episdoe_length"] = episdoe_length
                     timesteps = info["timestep"].max() * config["NUM_ENVS"]
-                    logs["charts/episdoe_length"] = episdoe_length
                     logs["losses/crl_loss"] = info["crl_loss"].item()
                     logs["charts/task_reward"] = info["task_reward"].item()
                     logs["charts/crl_reward"] = info["crl_reward"].item()
@@ -664,7 +662,6 @@ def make_train(config):
                     logs["charts/crl_value"] = info["crl_value"].item()
                     logs["charts/crl_value_max"] = info["crl_value_max"].item()
                     logs["charts/crl_value_min"] = info["crl_value_min"].item()
-                    logs["charts/mean_episode_return"] = return_values
                     if config["USE_WANDB"]:
                         wandb.log(logs, step=timesteps)
                     
@@ -698,7 +695,8 @@ if __name__ == "__main__":
         update_epochs: int = 4
         num_minibatches: int = 8
         gamma: float = 0.99
-        gae_lambda: float = 0.8
+        wandb_project: str = "ppo_jax"
+        gae_lambda: float = 0.95
         clip_eps: float = 0.1
         ent_coef: float = 0.01
         vf_coef: float = 0.5
@@ -728,6 +726,7 @@ if __name__ == "__main__":
         contrastive_loss: str = "infonce"
         update_proportion: int = 1
         logsumexp_penalty_coeff: float = 0.0
+        frame_stack: int = 4
 
     config = tyro.cli(Args)
     config = {k.upper(): v for k, v in config.__dict__.items()}

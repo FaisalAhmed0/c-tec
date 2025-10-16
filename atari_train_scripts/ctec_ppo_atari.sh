@@ -1,85 +1,58 @@
-##### Pong
-# seed: int = 0
-# num_steps: int = 64
-# total_timesteps: float = 500e6
-# gamma: float = 0.99
-# gae_lambda: float = 0.8
-# max_grad_norm: float = 1.0
-# activation: str = "tanh"
-# env_name: str = "Pong-v5"
-# similarity_measure: str = "l2"
-# use_action_in_cl: bool = True
-# contrastive_hidden_dim: int = 2048
-# contrastive_number_hiddens: int = 4
-# repr_dim: int = 64
-# activation_crl: str = "nn.relu"
-# use_normalize_repr: bool = True
-# gamma_cl: float = 0.99
-# gamma_cl_reward: float = 0.99
-# contrastive_loss: str = "infonce"
+#!/bin/bash
 
+# ================================
 
-#### Discount of 0.99
-# With representation dim of 64
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l2"
-# With representation dim of 16
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l2"
+# Configurable Atari PPO Runner
 
+# ================================
 
-# With representation dim of 64 and with l1 energy function
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l1"
-# With representation dim of 16 and with l1 energy function
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.99 --gamma_cl_reward=0.99 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l1"
+# Base configuration
+TOTAL_TIMESTEPS=500000000
+NUM_STEPS=128
+NUM_ENVS=256
+WANDB_PROJECT="ctec_atari_2"
+USE_NORMALIZE_REPR="--use_normalize_repr"
+SCRIPT="train_ctec_atari ppo_jax.py"
+# Sweep parameters
+ENV_NAMES=("Breakout-v5")
+REPR_DIMS=(16 64)
+GAMMAS=(0.3 0.5 0.99)
+HIDDEN_DIMS=(1024)
+NUMBERS_UNITS=(2 4)
+SIM_MEASURES=("l2" "l1" "dot" "l2_no_sqrt")
+FRAME_STACKS=(1 4)
 
+# ================================
 
+# Run combinations
 
-#### Discount of 0.5
-# With representation dim of 64
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l2"
-# With representation dim of 16
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l2"
-
-
-# With representation dim of 64 and with l1 energy function
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l1"
-# With representation dim of 16 and with l1 energy function
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.5 --gamma_cl_reward=0.5 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l1"
-
-
-
-#### Discount of 0.3
-# With representation dim of 64
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l2"
-# With representation dim of 16
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l2"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l2"
-
-
-# With representation dim of 64 and with l1 energy function
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=64 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l1"
-# With representation dim of 16 and with l1 energy function
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=256 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=512 --contrastive_number_hiddens=4 --similarity_measure="l1"
-sbatch train_ctec_atari ppo_jax.py --repr_dim=16 --env_name="Pong-v5" --use_normalize_repr --total_timesteps=500000000 --num_steps=128 --gamma_cl=0.3 --gamma_cl_reward=0.3 --num_envs=256 --wandb_project="ctec_atari" --contrastive_hidden_dim=1024 --contrastive_number_hiddens=4 --similarity_measure="l1"
-
+# ================================
+for env_name in "${ENV_NAMES[@]}"; do
+for gamma in "${GAMMAS[@]}"; do
+for repr_dim in "${REPR_DIMS[@]}"; do
+for sim in "${SIM_MEASURES[@]}"; do
+for hidden_dim in "${HIDDEN_DIMS[@]}"; do
+for frame_stack in "${FRAME_STACKS[@]}"; do
+for number_units in "${NUMBERS_UNITS[@]}"; do
+    CMD="sbatch $SCRIPT \
+      --repr_dim=${repr_dim} \
+      --env_name=${env_name} \
+      ${USE_NORMALIZE_REPR} \
+      --total_timesteps=${TOTAL_TIMESTEPS} \
+      --num_steps=${NUM_STEPS} \
+      --num_envs=${NUM_ENVS} \
+      --wandb_project=${WANDB_PROJECT} \
+      --gamma_cl=${gamma} \
+      --gamma_cl_reward=${gamma} \
+      --contrastive_hidden_dim=${hidden_dim} \
+      --contrastive_number_hiddens=${number_units} \
+      --frame_stack=${frame_stack} \
+      --similarity_measure=${sim}"
+    eval ${CMD}
+  done
+done
+done
+done
+done
+done
+done
