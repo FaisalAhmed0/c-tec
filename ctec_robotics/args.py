@@ -9,7 +9,7 @@ class CTEC_args:
     torch_deterministic: bool = True
     cuda: bool = True
     track: bool = False
-    wandb_project_name: str = "exploration"
+    wandb_project_name: str = "ctec_brax_collect_replay"
     wandb_entity: str = None
     wandb_mode: str = 'online'
     wandb_dir: str = '.'
@@ -107,7 +107,7 @@ class CTEC_args:
     gamma_schedule_end: float = 1.0
     save_all_crl_ckpts: bool = False
     ema: float=0.999
-    save_replay_data: bool = False
+    save_replay_data: bool = True
 
 
 

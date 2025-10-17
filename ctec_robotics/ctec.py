@@ -790,6 +790,7 @@ def main(args):
         )
         ## Testing the discretized density for state coverage
     _, sample = replay_buffer.sample(new_state)
+    
 
     replay_size = jnp.sum(jax.vmap(replay_buffer.size)(buffer_state)) * jax.process_count()
     logging.info("replay size after prefill %s", replay_size)
@@ -829,6 +830,11 @@ def main(args):
         )
         
         _, sample = replay_buffer.sample(new_state)
+        # import pdb;pdb.set_trace()
+        if args.save_replay_data:
+            path = os.path.join(run_dir, "buffer_data")
+            os.makedirs(path, exist_ok=True)
+            save_buffer_sample(sample, path, current_step)
         
         path = os.path.join(run_dir, "buffer_data")
         os.makedirs(path, exist_ok=True)
