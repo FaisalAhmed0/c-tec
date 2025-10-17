@@ -13,7 +13,7 @@ conda activate ctec
 ```
 install jax and jaxlib with cuda12 support
 ```
-python -m pip install "jax[cuda12]=0.4.25"
+python -m pip install "jax[cuda12]==0.4.25"
 ```
 ## Experiments and hyperparameters
 To track the experiments in Weights & Biases (wandb), make sure you have set up your wandb account. For more details, check https://docs.wandb.ai/quickstart

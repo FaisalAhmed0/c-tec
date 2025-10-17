@@ -43,7 +43,7 @@ from utils import MetricsRecorder, create_env, create_eval_env,\
 from intrinsic_rewards import crl_reward
 from buffers import TrajectoryUniformSamplingQueue
 from losses import make_contrastive_critic_loss as make_contrastive_loss
-from models import ContrastiveCritic
+from models import ContrastiveCritic, MonolithicCritic
 from wonderwords import RandomWord
 
 
@@ -128,6 +128,7 @@ def main(args):
     ) / (args.num_envs * args.unroll_length)
     print(f"SGD steps per env steps: {sgd_to_env}")
     args.sgd_to_env = sgd_to_env
+    args.env_to_sgd = 1/sgd_to_env
 
     args.num_evals_after_init = max(args.num_evals - 1, 1)
     args.env_steps_per_actor_step = args.num_envs * args.unroll_length
@@ -136,9 +137,10 @@ def main(args):
     args.num_training_steps_per_epoch = -(
         -(args.num_timesteps - args.num_prefill_env_steps) // (args.num_evals_after_init * args.env_steps_per_actor_step)
     )
-    print(f"env_steps_per_actor_step: {args.env_steps_per_actor_step}")
-    print("Num_prefill_actor_steps: ", args.num_prefill_actor_steps)
+    # print(f"env_steps_per_actor_step: {args.env_steps_per_actor_step}")
+    # print("Num_prefill_actor_steps: ", args.num_prefill_actor_steps)
     print(f"Number of training steps per epoch: {args.num_training_steps_per_epoch}")
+    print(f"env_to_sgd_steps ratio={1/sgd_to_env}:1")
 
     scratch_path = os.getenv("SCRATCH")
     runs_path = os.path.join(scratch_path, "crl_runs")  
@@ -249,7 +251,10 @@ def main(args):
         args.crl_observation_dim = env.state_dim if args.use_complete_future_state else env.goal_indices.shape[-1]
 
     # Make the contrastive critic
-    contrastive_network = ContrastiveCritic(args)
+    if args.use_monolithic_critic:
+        contrastive_network = MonolithicCritic(args)
+    else:
+        contrastive_network = ContrastiveCritic(args)
     contrastive_optimizer = optax.adam(learning_rate=args.critic_lr)
     
     # create the transition object
@@ -800,7 +805,9 @@ def main(args):
     current_step = 0
 
     videos_indices = np.linspace(0, args.num_evals_after_init-1, args.num_videos).astype(int)
+    reward_visual_indices = np.linspace(0, args.num_evals_after_init-1, args.num_reward_visuals).astype(int)
     print(f"Rendering videos indices: {videos_indices}")
+    print(f"Rendering reward_visual_indices: {reward_visual_indices}")
     
     # training loop!
     # 
@@ -835,7 +842,10 @@ def main(args):
             path = os.path.join(run_dir, "buffer_data")
             os.makedirs(path, exist_ok=True)
             save_buffer_sample(sample, path, current_step)
-        
+        from utils import visualize_ctec_reward
+        if epoch in reward_visual_indices:
+            scatter_img = visualize_ctec_reward(sample, _unpmap(training_state.contrastive_params), local_key, crl_networks.critic_network, args)
+            wandb.log({"Reward_visual": wandb.Image(scatter_img)}, step=current_step)
         path = os.path.join(run_dir, "buffer_data")
         os.makedirs(path, exist_ok=True)
         

@@ -28,9 +28,9 @@ class CTEC_args:
     goal_end_idx: int = 0
 
     # Algorithm specific arguments
-    num_timesteps: int = 10_000_000
-    num_epochs: int = 50
-    num_envs: int = 512
+    num_timesteps: int = 50_000_000
+    num_epochs: int = 500
+    num_envs: int = 1024
     num_eval_envs: int = 5
     actor_lr: float = 3e-4
     critic_lr: float = 3e-4
@@ -47,14 +47,14 @@ class CTEC_args:
     agent_number_hiddens: int = 2
     agent_hidden_dim: int = 256
     
-    unroll_length: int  = 62
+    unroll_length: int  = 31
     reward_scaling: float = 1.0
     use_her: bool = False
     """Use hindsight experince replay"""
     multiplier_num_sgd_steps: int = 1
     deterministic_eval: bool = False
     action_repeat: int = 1
-    num_evals: int = 50
+    num_evals: int = 500
     backend: str = None
     eval_env: str = None
     render_agent: bool = False
@@ -107,7 +107,9 @@ class CTEC_args:
     gamma_schedule_end: float = 1.0
     save_all_crl_ckpts: bool = False
     ema: float=0.999
-    save_replay_data: bool = True
+    save_replay_data: bool = False
+    use_monolithic_critic: bool = False
+    num_reward_visuals: int = 50
 
 
 
