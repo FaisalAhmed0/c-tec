@@ -251,7 +251,7 @@ def main(args):
         args.crl_observation_dim = env.state_dim if args.use_complete_future_state else env.goal_indices.shape[-1]
 
     # Make the contrastive critic
-    if args.use_monolithic_critic:
+    if args.use_mono_critic:
         contrastive_network = MonolithicCritic(args)
     else:
         contrastive_network = ContrastiveCritic(args)

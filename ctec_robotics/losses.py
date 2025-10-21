@@ -120,7 +120,7 @@ def make_contrastive_critic_loss(crl_networks, args):
         obs = transitions.observation[:, :args.obs_dim]
         action = transitions.action
         future_obs = transitions.observation[:, args.obs_dim:]
-        if args.use_monolithic_critic:
+        if args.use_mono_critic:
             logits = critic_network.apply(critic_params, obs, action, future_obs,  key, args.da)
             ################ Contrastive losses ################
             critic_loss = contrastive_losses()[args.contr_loss](logits)

@@ -12,7 +12,7 @@ SGD_STEPS_FACTR=1
 ENTROPY_REG="--entropy_reg"
 run_name_suffix="ctec"
 checkpoint="--no-checkpoint"
-use_mono_ciritc="--use_monolithic_critic"
+use_mono_ciritc="--use_mono_critic"
 
 
 

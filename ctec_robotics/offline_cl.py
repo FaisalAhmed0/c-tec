@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import argparse
 import json
 import numpy as np
-from models import ContrastiveCritic
+from models import ContrastiveCritic, MonolithicCritic
 from losses import make_contrastive_critic_loss as make_contrastive_loss
 import flax
 import flax.linen as nn
@@ -53,7 +53,7 @@ class Args:
     wandb_entity: str = None
     wandb_mode: str = 'online'
     track: bool = False
-    viusal_freq: int = 5
+    viusal_freq: int = 10
     crl_goal_indices: object = None
     crl_observation_dim: int = 0 # if > 0 use for debugging
     use_complete_future_state: bool = False
@@ -81,6 +81,9 @@ class Args:
     use_deep_encoder: bool = False
     discounting_cl: float = 0.99
     layer_norm_crl: bool = False
+    use_mono_critic: bool = False
+    critic_lr: float = 3e-4
+    activation: str = "nn.relu"
 
 
 def load_args(path: str):
@@ -103,7 +106,7 @@ class TorchDataSet(Dataset):
     PyTorch Dataset for loading .npz files (with JAX arrays) from a directory.
     Converts arrays to torch tensors for use with DataLoader.
     """
-    def __init__(self, npz_files_directory, args, number_of_file=50):
+    def __init__(self, npz_files_directory, args, number_of_file=100):
         self.args = args
         npz_files = [f for f in os.listdir(npz_files_directory) if f.endswith('.npz')]
         if not npz_files:
@@ -166,10 +169,10 @@ class TorchDataSet(Dataset):
 
 def create_contrastive_model_and_optimizer(args):
     # TODO: fix the MonolithicCriticLoss
-    # if args.use_mono_critic:
-    #     contrastive_network = MonolithicCritic(args)
-    # else:
-    contrastive_network = ContrastiveCritic(args)
+    if args.use_mono_critic:
+        contrastive_network = MonolithicCritic(args)
+    else:
+        contrastive_network = ContrastiveCritic(args)
     contrastive_optimizer = optax.adam(learning_rate=args.critic_lr)
     return contrastive_network, contrastive_optimizer
 
@@ -186,13 +189,21 @@ def main(args):
     training_args = load_args(training_args_path)
     dataset = TorchDataSet(buffer_data_path, training_args)
     dataloader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=True)
-    
-    contrastive_network, contrastive_optimizer = create_contrastive_model_and_optimizer(training_args)
+    args.obs_dim = training_args.obs_dim
+    args.action_dim = training_args.action_dim
+    args.crl_goal_indices = training_args.crl_goal_indices
+    args.crl_observation_dim = training_args.crl_observation_dim
+    args.use_complete_future_state = training_args.use_complete_future_state
+    contrastive_network, contrastive_optimizer = create_contrastive_model_and_optimizer(args)
 
+    critic_type = "monolithic" if args.use_mono_critic else "separable"
+    run_name = f"{critic_type}_critic-number_of_hidden_units_{args.contrastive_hidden_dim}-batch_size_{args.batch_size}-energy_fn_{args.energy_fn}"
     if args.track:
         wandb.init(project=args.wandb_project_name, 
                    entity=args.wandb_entity, 
-                   mode=args.wandb_mode)
+                   mode=args.wandb_mode, 
+                   config=vars(args),
+                   name=run_name)
         
 
 
@@ -206,7 +217,7 @@ def main(args):
     # if training_args.use_mono_critic:
     #     contrastive_loss_fn = make_mono_critic_loss(crl_networks, training_args)
     # else:
-    contrastive_loss_fn = make_contrastive_loss(crl_networks, training_args)
+    contrastive_loss_fn = make_contrastive_loss(crl_networks, args)
 
 
     key = jax.random.key(training_args.seed)
@@ -255,8 +266,12 @@ def main(args):
             initial_action_tiled = jnp.repeat(action[None, :], axis=0, repeats=number_of_samples)
             all_future_observations = random_future_obs[:, training_args.crl_goal_indices]
             # import pdb;pdb.set_trace()
-            sa_repr, future_repr, _ = contrastive_network.apply(training_state.contrastive_params,initial_observation_tiled, initial_action_tiled, all_future_observations, key_critic, False, train=False)
-            logits = similarity_method[training_args.energy_fn](sa_repr, future_repr)
+            if args.use_mono_critic:
+        # TODO: figure out how to use add another function to the module and use it instead of using __call__
+                logits = contrastive_network.apply(training_state.contrastive_params, initial_observation_tiled, initial_action_tiled, all_future_observations, method=contrastive_network.compute_intr_rwd).squeeze()
+            else:
+                sa_repr, future_repr, _ = contrastive_network.apply(training_state.contrastive_params,initial_observation_tiled, initial_action_tiled, all_future_observations, key_critic, False, train=False)
+                logits = similarity_method[training_args.energy_fn](sa_repr, future_repr)
             ctec_reward.append(logits)
             # import pdb;pdb.set_trace()
         # import pdb;pdb.set_trace()
@@ -271,7 +286,7 @@ def main(args):
             obs_2d = obs[:2]
             plt.scatter(all_future_observations[:, 0], all_future_observations[:, 1], c=ctec_reward[j], cmap="jet", alpha=0.3)
             plt.colorbar()
-            plt.scatter(obs_2d[0], obs_2d[1], color="black", s=100)
+            plt.scatter(obs_2d[0], obs_2d[1], color="red", s=100)
             
         fig.canvas.draw()
         # # Get the width and height of the figure in pixels

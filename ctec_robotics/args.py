@@ -108,7 +108,7 @@ class CTEC_args:
     save_all_crl_ckpts: bool = False
     ema: float=0.999
     save_replay_data: bool = False
-    use_monolithic_critic: bool = False
+    use_mono_critic: bool = False
     num_reward_visuals: int = 50
 
 

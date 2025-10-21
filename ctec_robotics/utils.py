@@ -387,7 +387,7 @@ def visualize_ctec_reward(transition, contrastive_params, key_critic, contrastiv
     future_state = (state[:, :args.obs_dim]).reshape(-1, args.obs_dim)
     goal = future_state[:, args.crl_goal_indices]
 
-    if args.use_monolithic_critic:
+    if args.use_mono_critic:
         # TODO: figure out how to use add another function to the module and use it instead of using __call__
         sm = contrastive_network.apply(contrastive_params, state, action, goal, method=contrastive_network.compute_intr_rwd).squeeze()
     else:
