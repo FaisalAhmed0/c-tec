@@ -622,8 +622,7 @@ def make_train(config):
                         return total_loss, (value_loss, loss_actor, entropy)
 
                     grad_fn = jax.value_and_grad(_loss_fn, has_aux=True)
-                    total_loss, grads = grad_fn(
-                        train_state.params, init_hstate, traj_batch, advantages, targets
+                    total_loss, grads = grad_fn(train_state.params, init_hstate, traj_batch, advantages, targets
                     )
                     train_state = train_state.apply_gradients(grads=grads)
                     if config["USE_EMPOWERMENT"]:
@@ -707,8 +706,14 @@ def make_train(config):
                 / traj_batch.info["returned_episode"].sum(),
                 traj_batch.info,
             )
+            total_loss, losses = loss_info
+            total_loss, (value_loss, loss_actor, entropy) = total_loss
             
             metric["crl_loss"] = loss_info[1][1].mean()
+            metric["total_ppo_loss"] = total_loss.mean()
+            metric["value_loss"] = value_loss.mean()
+            metric["loss_actor"] = loss_actor.mean()
+            metric["policy_entropy"] = entropy.mean()
             metric["task_reward"] = traj_batch.reward.mean()
             metric["crl_reward"] = adv_info[3].mean()
             metric["crl_value"] = adv_info[1].mean()
@@ -734,7 +739,7 @@ def make_train(config):
                         agg_logs = batch_log(update_step, to_log, config)
                         csv_logger.log(agg_logs)    
 
-                def _save_network(training_state, update_step):
+                def _save_network(training_state, crl_state, update_step):
                     if (update_step+1) % config["VIDEO_LOG_FREQ"] == 0:
                         dir_name="policies"
                         base_path = config["CHECKPOINT_DIR"]
@@ -743,6 +748,29 @@ def make_train(config):
                         orbax_checkpointer = PyTreeCheckpointer()
                         options = CheckpointManagerOptions(max_to_keep=1, create=True)
                         path = os.path.join(base_path, dir_name)
+                        if os.path.exists(path):
+                            import shutil
+                            shutil.rmtree(path)
+                        os.makedirs(path)
+                        checkpoint_manager = CheckpointManager(path, orbax_checkpointer, options)
+                        print(f"saved runner state to {path}")
+                        save_args = orbax_utils.save_args_from_target(train_state)
+                        checkpoint_manager.save(
+                            int(config["TOTAL_TIMESTEPS"]),
+                            train_state,
+                            save_kwargs={"save_args": save_args},
+                        )
+                        dir_name="crl"
+                        base_path = config["CHECKPOINT_DIR"]
+                        train_states = crl_state["crl_model"]
+                        train_state = jax.tree.map(lambda x: x, train_states)
+                        orbax_checkpointer = PyTreeCheckpointer()
+                        options = CheckpointManagerOptions(max_to_keep=1, create=True)
+                        path = os.path.join(base_path, dir_name)
+                        if os.path.exists(path):
+                            import shutil
+                            shutil.rmtree(path)
+                        os.makedirs(path)
                         checkpoint_manager = CheckpointManager(path, orbax_checkpointer, options)
                         print(f"saved runner state to {path}")
                         save_args = orbax_utils.save_args_from_target(train_state)
@@ -754,7 +782,9 @@ def make_train(config):
                         visualize_agent_rnn(config["CHECKPOINT_DIR"], config=config_copy, log_to_wandb=True)
 
                 jax.debug.callback(callback, metric, update_step)
-                jax.debug.callback(_save_network, train_state, update_step)
+                jax.debug.callback(_save_network, train_state, crl_state, update_step)
+                # jax.debug.callback(_save_crl_network, crl_state, update_step)
+                
 
             runner_state = (
                 train_state,

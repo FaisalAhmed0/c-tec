@@ -48,6 +48,14 @@ def create_log_dict(info, config):
         to_log["crl_value_min"] = info["crl_value_min"]
     if "state_counts" in info:
         to_log["state_counts"] = info["state_counts"]
+    if "total_ppo_loss" in info:
+        to_log["total_ppo_loss"] = info["total_ppo_loss"]   
+    if "value_loss" in info:
+        to_log["value_loss"] = info["value_loss"]
+    if "loss_actor" in info:
+        to_log["loss_actor"] = info["loss_actor"]
+    if "policy_entropy" in info:
+        to_log["policy_entropy"] = info["policy_entropy"]
         
 
     sum_achievements = 0

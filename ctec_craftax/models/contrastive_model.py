@@ -237,7 +237,7 @@ class ContrastiveModel(nn.Module):
         config = self.config
         if config["USE_RNN"]:
                 embedding = nn.Dense(
-                self.config["LAYER_SIZE"],
+                self.config["CONTRASTIVE_HIDDEN_DIM"],
                 kernel_init=orthogonal(np.sqrt(2)),
                 bias_init=constant(0.0),
                 )(obs)
@@ -245,13 +245,20 @@ class ContrastiveModel(nn.Module):
                 rnn_in = (embedding, dones)
                 hidden_state, embedding = ScannedRNN()(hidden_state, rnn_in)
                 # import pdb;pdb.set_trace()  
+        elif config["EMBED_OBS"]:
+            layer_sizes = [config["CONTRASTIVE_HIDDEN_DIM"]//2]*config["CONTRASTIVE_NUMBER_HIDDENS"] + [config["REPR_DIM"]]
+            
+            embedding = CRL_MLP(layer_sizes, config["USE_LAYER_NORM"], eval(config["ACTIVATION_CRL"]))(obs)
+            action = CRL_MLP(layer_sizes, config["USE_LAYER_NORM"], eval(config["ACTIVATION_CRL"]))(action)
+            future_embedding = CRL_MLP(layer_sizes, config["USE_LAYER_NORM"], eval(config["ACTIVATION_CRL"]))(future_obs)
         else:
             embedding = obs
+            future_embedding = future_obs
         # update the mean and the std of the observations
         sa_encoder = SA_encoder(config)
         s_encoder = S_encoder(config)
         obs_action_rep = sa_encoder(embedding, action)
-        future_obs_rep = s_encoder(future_obs)
+        future_obs_rep = s_encoder(future_embedding)
 
         return obs_action_rep, future_obs_rep, sa_encoder.log_temperature, hidden_state
     

@@ -20,11 +20,38 @@ from orbax.checkpoint import (
 import orbax.checkpoint as ocp
 
 from models.actor_critic import ActorCriticConv, ActorCritic
+from models.contrastive_model import ContrastiveModel, EmpowermentModel
 from craftax.craftax_classic.renderer import render_craftax_pixels
 import imageio
 import jax.lax as lax
 import csv
 from envs.ant_maze import AntMaze
+from typing import Sequence, NamedTuple, Dict
+from craftax.craftax_classic.constants import Achievement, Action
+
+class Transition(NamedTuple):
+    done: jnp.ndarray
+    action: jnp.ndarray
+    # reward: jnp.ndarray
+    obs: jnp.ndarray
+    # info: jnp.ndarray
+
+
+
+similarity_methods = {
+        "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1)),
+        "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr[:, None, :] - g_repr[None, :, :]) ** 2, axis=-1),
+        "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr[:, None, :] - g_repr[None, :, :]), axis=-1),
+        "dot": lambda sa_repr, g_repr: jnp.einsum("ik,jk->ij", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
+    } # for the contrastive loss
+
+similarity_methods_for_rwd = {
+        "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr - g_repr) ** 2, axis=-1)),
+        "l2_no_sqrt": lambda sa_repr, g_repr: -(jnp.sum((sa_repr - g_repr) ** 2, axis=-1)),
+        "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr - g_repr), axis=-1),
+        "dot": lambda sa_repr, g_repr: jnp.einsum("ik,jk->i", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
+    } # for computing the c-tec reward
+    
 
 def create_csv_logger(env_name, path):
     metrics_to_collect = ["achievements", "episode_return", "max_return_percentage"]
@@ -287,6 +314,7 @@ def visualize_agent_rnn(path, config=None, args=None, log_to_wandb=False):
     options = CheckpointManagerOptions(max_to_keep=1, create=True)
     # import pdb;pdb.set_trace()
     checkpoint_manager = CheckpointManager(os.path.join(path, "policies"), orbax_checkpointer, options)
+    checkpoint_crl_manager = CheckpointManager(os.path.join(path, "crl"), orbax_checkpointer, options)
 
     is_classic = False
 
@@ -358,6 +386,50 @@ def visualize_agent_rnn(path, config=None, args=None, log_to_wandb=False):
         int(config["TOTAL_TIMESTEPS"]), items=train_state
     )
 
+    contrastive_network = ContrastiveModel(config)
+    obs_shape = env.observation_space(env_params).shape[0]
+    action_shape = env.action_space(env_params).n
+    dummy_obs = jnp.zeros((1, obs_shape))
+    dummy_future_obs = jnp.zeros((1, obs_shape))
+    dummy_action = jnp.zeros((1, action_shape))
+    crl_params = contrastive_network.init(_rng, dummy_obs, dummy_action, dummy_future_obs, jnp.zeros((1, config["NUM_ENVS"])),  init_hstate)
+
+    tx = optax.chain(optax.clip_by_global_norm(config["MAX_GRAD_NORM"]),optax.adam(config["LR"], eps=1e-5),)
+    crl_train_state = TrainState.create(apply_fn=contrastive_network.apply,params=crl_params,tx=tx,)
+    crl_train_state = checkpoint_crl_manager.restore(int(config["TOTAL_TIMESTEPS"]), items=crl_train_state)
+    similarity_method_for_rwd = similarity_methods_for_rwd[config["SIMILARITY_MEASURE"]]
+
+    def mc_crl_reward(trans_batch, action, gamma):
+        trans_batch = trans_batch
+        
+        state = trans_batch.obs
+        # action = trans_batch.action
+        dones = trans_batch.done 
+        T_DELTA = config["NUM_STEPS"]
+        T_total, N, D = state.shape
+        deltas_desc = jnp.arange(T_DELTA-1, 0, -1)
+        def one_time(_, t):
+            s_t = lax.dynamic_index_in_dim(state, t, axis=0, keepdims=False)
+            a_t = action
+            a_t = jax.nn.one_hot(a_t, num_classes=action_shape)
+            
+            done = lax.dynamic_index_in_dim(dones, t, axis=0, keepdims=False)
+            def accumulate(r, delta):
+                k, valid = t + delta, ((t + delta) < T_total)
+                s_k = lax.dynamic_index_in_dim(state, jnp.minimum(k, T_total-1),
+                                            axis=0, keepdims=False)
+                # import pdb;pdb.set_trace()
+                obs_action_rep, future_obs_rep, log_temp, init_hidden = contrastive_network.apply(crl_train_state.params, s_t, a_t, s_k, None, None)
+                d2  = jax.lax.stop_gradient(similarity_method_for_rwd(obs_action_rep, future_obs_rep))    # (N,))
+
+                d2 = jnp.where(~done, d2*valid, 0.0)
+                return d2 + gamma * r, None
+            r_t, _ = lax.scan(accumulate, jnp.zeros((N,)), deltas_desc)
+            norm = (1.0 - gamma ** (T_DELTA - t)) / (1.0 - gamma) if config["USE_NORM_CONSTANT"] else 1
+            return _, norm*r_t
+        _, reward_rev = lax.scan(one_time, None, jnp.arange(T_total-1, -1, -1))
+        return reward_rev[::-1]
+
     obs, env_state = env.reset(key=_rng)
     done = 0
     # import pdb;pdb.set_trace()
@@ -372,8 +444,15 @@ def visualize_agent_rnn(path, config=None, args=None, log_to_wandb=False):
     frames.append(render_craftax_pixels(env_state, 16))
     # import pdb;pdb.set_trace()
     hstate = init_hstate
+    obs_stack = []
+    action_stack = []
+    done_stack = []
+    reward_stack = []
+    achievements = set()
+    achievements_timesteps_pairs = []
+    t = 0
     while not done:
-        obs = jnp.expand_dims(obs, axis=0)[None, :]
+        last_obs = obs = jnp.expand_dims(obs, axis=0)[None, :]
         done = jnp.array([done])[None, :]
         ac_in = (obs, done)
         # import pdb;pdb.set_trace()  
@@ -384,11 +463,134 @@ def visualize_agent_rnn(path, config=None, args=None, log_to_wandb=False):
 
         if action is not None:
             rng, _rng = jax.random.split(rng)
-            old_achievements = env_state.achievements
+            # old_achievements = env_state.achievements
             obs, env_state, reward, done, info = env.step(_rng, env_state, action.item(), env_params)
             new_achievements = env_state.achievements
+            if reward.item() > 0:
+                for i in range(len(new_achievements)):
+                    ach = new_achievements[i].item()
+                    if ach:
+                        if Achievement(i).name not in achievements:
+                            achievements.add(Achievement(i).name)
+                            achievements_timesteps_pairs.append((Achievement(i).name, t))
             frames.append(render_craftax_pixels(env_state, 16))
+            transition = Transition(
+                done, action, last_obs
+            )
+            obs_stack.append(last_obs)
+            action_stack.append(action)
+            done_stack.append(done)
+            reward_stack.append(reward)
+            last_obs = obs
+        t += 1
     # import pdb;pdb.set_trace()
+    achievements_timesteps = [ach_time[1] for ach_time in achievements_timesteps_pairs]
+    tt = Transition(done=jnp.stack([d for d in done_stack]),action=jnp.stack([a for a in action_stack]),obs=jnp.stack([o.squeeze()[None, :] for o in obs_stack]))
+    num_actions = env.action_space(env_params).n
+    action_ctec_reward_per_step = jnp.zeros(shape=(len(action_stack), num_actions))
+    for i in range(num_actions):
+        action_ctec_reward_per_step = action_ctec_reward_per_step.at[:, i].set(-1 * mc_crl_reward(tt, jnp.array([i]), config["GAMMA_CL_REWARD"]).squeeze())
+    import matplotlib.pyplot as plt
+    bar_plots = []
+    action_labels = [f"{i}" for i in range(num_actions)]
+    ctec_return = 0
+    craftex_return = 0
+    ctec_returns_so_far = []
+    craftex_returns_so_far = []
+    time_steps_track = 0
+    for i in range(action_ctec_reward_per_step.shape[0]):
+        current_frame = frames[i]
+        ctec_reward_per_action = action_ctec_reward_per_step[i]
+        colors = ["blue"] * num_actions
+        colors[action_stack[i].item()] = "red"
+        ctec_return = ctec_reward_per_action[action_stack[i].item()]
+        craftex_return += reward_stack[i]
+        ctec_returns_so_far.append(ctec_return)
+        craftex_returns_so_far.append(craftex_return)
+
+        # Prepare data for return plots
+        timesteps = list(range(i + 1))
+
+        # Create a figure with four subplots: frame, bar plot, ctec_return, craftex_return
+        fig, axs = plt.subplots(
+            1, 4, figsize=(25, 4), 
+            gridspec_kw={'width_ratios': [1, 2, 1, 1]}
+        )
+        ax_frame, ax_bar, ax_ctec_return, ax_craftex_return = axs
+
+        # Show the frame in the left subplot
+        ax_frame.imshow(current_frame.astype(np.int64))
+        ax_frame.axis('off')
+
+        # Plot the action reward bar plot in the second subplot
+        ctec_reward_per_action_normazlied = (ctec_reward_per_action - ctec_reward_per_action.mean())
+        ax_bar.bar(action_labels, ctec_reward_per_action_normazlied, color=colors)
+        # ax_bar.set_ylim(0, 1.0)
+        ax_bar.text(
+            1.0, 1.0, f"timestep: {i}", 
+            transform=ax_bar.transAxes,
+            fontsize=12,
+            verticalalignment='top',
+            horizontalalignment='right',
+            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none')
+        )
+        if i in achievements_timesteps:
+            ax_bar.text(
+                0.5, 1.05, 
+                f"Achievement: {achievements_timesteps_pairs[time_steps_track][0]}", 
+                transform=ax_bar.transAxes,
+                fontsize=12,
+                color="black",
+                ha='center',
+                va='bottom',
+                bbox=dict(facecolor='white', alpha=0.9, edgecolor='none')
+            )
+            time_steps_track += 1
+        for spine in ["top", "right"]:
+            ax_bar.spines[spine].set_visible(False)
+
+        # Plot ctec_return up to this step in the third subplot
+        ax_ctec_return.plot(timesteps, ctec_returns_so_far, color='blue', label='CTEC Return')
+        ax_ctec_return.scatter([i], [ctec_returns_so_far[-1]], color='red')
+        ax_ctec_return.set_xlabel("Timestep")
+        ax_ctec_return.set_ylabel("CTEC reward")
+        ax_ctec_return.set_title("CTEC reward")
+        for spine in ["top", "right"]:
+            ax_ctec_return.spines[spine].set_visible(False)
+        ax_ctec_return.grid(alpha=0.3, linestyle='--', linewidth=0.5)
+
+        # Plot craftax_return up to this step in the fourth subplot
+        ax_craftex_return.plot(timesteps, craftex_returns_so_far, color='green', label='Craftax Return')
+        ax_craftex_return.scatter([i], [craftex_returns_so_far[-1]], color='red')
+        ax_craftex_return.set_xlabel("Timestep")
+        ax_craftex_return.set_ylabel("Craftax Return")
+        ax_craftex_return.set_title("Craftax Return")
+        for spine in ["top", "right"]:
+            ax_craftex_return.spines[spine].set_visible(False)
+        ax_craftex_return.grid(alpha=0.3, linestyle='--', linewidth=0.5)
+
+        fig.tight_layout()
+        fig.canvas.draw()
+        # Convert plot to numpy array
+        width, height = fig.canvas.get_width_height()
+        np_fig_combined = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8).reshape((height, width, 3))
+        plt.close(fig)
+        bar_plots.append(np_fig_combined)
+
+    print(f"ctec return: {ctec_return}")
+    os.makedirs(os.path.join(path, "videos"), exist_ok=True)
+    save_path = os.path.join(path, "videos")
+    # imageio.mimsave("./ctec_rewd_action_dis.gif", np.stack(bar_plots, axis=0),)
+    # save_name = os.path.join(save_path, "ctec_rewd_action_dis.gif") 
+    save_name_mp4 = os.path.join(save_path, "ctec_rewd_action_dis.mp4") 
+    # imageio.mimsave(save_name, np.stack(bar_plots, axis=0),)
+    imageio.mimsave(save_name_mp4, np.stack(bar_plots, axis=0),)
+    if log_to_wandb:
+            # wandb.log({"ctec_rewd_action_dis": wandb.Image(save_name)})
+            wandb.log({"ctec_rewd_action_dis_mp4":  wandb.Video(save_name_mp4)})
+    
+        
+        
     if args:
         os.makedirs(os.path.join(args.save_path, "videos"), exist_ok=True)
         save_path = os.path.join(args.save_path, "videos")

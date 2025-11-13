@@ -184,6 +184,7 @@ def ctec_ppo_args(sys):
     # Contrastive
     parser.add_argument("--contrastive_hidden_dim", type=int, default=1024)
     parser.add_argument("--contrastive_number_hiddens", type=int, default=2)
+    parser.add_argument("--embed_obs", type=int, default=0)
     parser.add_argument("--repr_dim", type=int, default=64)
     parser.add_argument("--gamma_cl", type=float, default=0.99)
     parser.add_argument("--gamma_cl_reward", type=float, default=0.99)
@@ -292,6 +293,7 @@ def ctec_rnn_args(sys):
     # Contrastive
     parser.add_argument("--contrastive_hidden_dim", type=int, default=1024)
     parser.add_argument("--contrastive_number_hiddens", type=int, default=2)
+    parser.add_argument("--embed_obs", type=int, default=0)
     parser.add_argument("--repr_dim", type=int, default=64)
     parser.add_argument("--gamma_cl", type=float, default=0.3)
     parser.add_argument("--gamma_cl_reward", type=float, default=0.3)

@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
-#SBATCH --time=40:00:00
+#SBATCH --time=50:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH -o /network/scratch/f/faisal.mohamed/slurm-%j.out  # Write the log on scratch
 
