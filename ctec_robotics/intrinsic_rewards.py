@@ -80,3 +80,31 @@ def icm_reward(icm_network, icm_params, transition: Transition, goal_inds: jax.A
         rwd  = rwd / (stds[-1] + eps)
     # import pdb;pdb.set_trace()
     return rwd, icm_rms_state
+
+
+# prediction error based on forward dynamics
+def fd_reward(icm_network, icm_params, transition: Transition, goal_inds: jax.Array, fwd_rms_state: Any, rwd_rms=False):
+    # obs_t = transition.observation[:, :, goal_inds]
+    # action_t = transition.action
+    # next_obs = transition.next_observation[:, :, goal_inds]
+    obs_t = transition.observation
+    action_t = transition.action
+    next_obs = transition.next_observation
+    next_obs_prediction = icm_network.apply(icm_params, obs_t, action_t)
+    # import pdb;pdb.set_trace()
+    rwd = jax.lax.stop_gradient(jnp.mean(jnp.square(next_obs - next_obs_prediction), axis=-1))
+    if rwd_rms:
+        def update_rms_scan(state, x_b):
+            # state: tuple of 3 (), x_b: (B,)
+            def body_fn(carry, x_i):
+                return update_rms(carry, x_i)
+            final_state, (means, stds) = jax.lax.scan(body_fn, state, x_b)
+            # Return the last mean and std, with the final updated state
+            return final_state, (means[-1], stds[-1])
+        eps = 1e-8
+        vmap_update = jax.vmap(update_rms_scan, in_axes=(0, 0))
+        new_fwd_rms_state, (final_means, final_stds) = vmap_update(fwd_rms_state, rwd)
+        rwd  = rwd / (final_stds[:, None] + eps)
+    else:
+        new_fwd_rms_state = fwd_rms_state
+    return rwd, new_fwd_rms_state

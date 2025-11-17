@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_ablation_contrastive_model_discounts"
+WANDB_PROJECT_NAME="ctec_ablation_contrastive_model_temperatures"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
@@ -13,16 +13,17 @@ ENTROPY_REG="--entropy_reg"
 run_name_suffix="ctec"
 checkpoint="--no-checkpoint"
 logsumexp_penalty_coeff=0.1
+FIX_TEMP="--fix_temp"
 
 
 
 #### For humanoid_u_maze, use the following values
-ENV_NAMES=("humanoid_u_maze")
-BATCH_SIZES=(256)                           
-NUM_ENVS_VALUES=(256)                      
-# ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
-# BATCH_SIZES=(1024)                           
-# NUM_ENVS_VALUES=(1024)                      
+# ENV_NAMES=("humanoid_u_maze")
+# BATCH_SIZES=(256)                           
+# NUM_ENVS_VALUES=(256)                      
+ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
+BATCH_SIZES=(1024)                           
+NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
 NUM_TIMESTEPS_VALUES=(500000000) 
 NUM_EVALS_VALUES=(2000)                    
@@ -33,9 +34,10 @@ CONTR_LOSSES=("infonce")
 EPISODE_LENGTHS=(1000) 
 energy_fns=("l1") # contrastive critic function
 contrastive_number_hiddenss=(2)
-discountings_crl=(0.9 0.7 0.5 0.3)
+discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
+TEMP_VALUES=(1 0.5 0.1 5 10)
 
 # Run counter
 run_count=0
@@ -57,6 +59,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                         for NUM_EPOCHS in "${NUM_EPOCHS_VALUES[@]}"; do
                             for NUM_TIMESTEPS in "${NUM_TIMESTEPS_VALUES[@]}"; do
                                 for NUM_EVALS in "${NUM_EVALS_VALUES[@]}"; do 
+                                for TEMP_VALUE in "${TEMP_VALUES[@]}"; do 
                                     # Construct the sbatch command
                                     CMD="sbatch scripts/train_ctec ctec.py \
                                         --env_name=${ENV_NAME} \
@@ -65,6 +68,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         ${USE_COMPLETE_FUTURE_STATE} \
                                         ${LAYER_NORM} \
                                         ${ENTROPY_REG} \
+                                        ${FIX_TEMP} \
                                         --multiplier_num_sgd_steps=${SGD_STEPS_FACTR} \
                                         --wandb_project_name=\"${WANDB_PROJECT_NAME}\" \
                                         --batch_size=${BATCH_SIZE} \
@@ -82,6 +86,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         --repr_dim=${REP_DIM} \
                                         --contr_loss=${CONT_LOSS} \
                                         --discounting_cl=${discounting_crl} \
+                                        --temp_value=${TEMP_VALUE} \
                                         --actor_lr=${LR} \
                                         --critic_lr=${LR} \
                                         --future_state_rwd_sampling=${future_state_rwd_sampling} \
@@ -98,6 +103,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
             done
         done
     done
+done
 done
 done
 done

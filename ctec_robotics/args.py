@@ -9,7 +9,7 @@ class CTEC_args:
     torch_deterministic: bool = True
     cuda: bool = True
     track: bool = False
-    wandb_project_name: str = "ctec_brax_collect_replay"
+    wandb_project_name: str = "ctec"
     wandb_entity: str = None
     wandb_mode: str = 'online'
     wandb_dir: str = '.'
@@ -47,7 +47,7 @@ class CTEC_args:
     agent_number_hiddens: int = 2
     agent_hidden_dim: int = 256
     
-    unroll_length: int  = 31
+    unroll_length: int  = 62
     reward_scaling: float = 1.0
     use_her: bool = False
     """Use hindsight experince replay"""

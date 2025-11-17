@@ -169,9 +169,10 @@ def make_contrastive_critic_loss(crl_networks, args):
             "logits_neg": logits_neg,
             "logits_mean":logits_mean,
             "logits_std": logits_std,
+            "logits_var": jnp.power(logits_std, 2),
             "logsumexp": logsumexp.mean(),
             "critic_loss": critic_loss,
-            "temparture": jax.lax.stop_gradient(jnp.exp(log_temp))
+            "temperature": jax.lax.stop_gradient(jnp.exp(log_temp))
         }
         return critic_loss, metrics
     return critic_loss
@@ -245,4 +246,19 @@ def make_icm_loss(icm_network):
         total_loss = (icm_forward_loss_weight * forward_loss) + ((1-icm_forward_loss_weight) * backward_loss)
         return total_loss
     return icm_loss
+
+
+def make_fd_loss(fd_network):
+    def fd_loss(fd_params, normalizer_params ,transitions, goal_inds, icm_forward_loss_weight):
+        # obs_t = transitions.observation[:, goal_inds]
+        # action_t = transitions.action
+        # next_obs = transitions.next_observation[:, goal_inds]
+        obs_t = transitions.observation
+        action_t = transitions.action
+        next_obs = transitions.next_observation
+        next_obs_prediction = fd_network.apply(fd_params, obs_t, action_t)
+        forward_loss = jnp.mean(jnp.square(next_obs - next_obs_prediction))
+        total_loss = forward_loss
+        return total_loss
+    return fd_loss
 

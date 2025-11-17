@@ -59,7 +59,11 @@ class SA_encoder(nn.Module):
 
     def setup(self):
         # Initialize the temperature parameter (starting with 1.0, can be adjusted)
-        self.log_temperature = self.param('temperature', lambda key: jnp.zeros(()))
+        args = self.args
+        if args.fix_temp:
+            self.log_temperature = jnp.ones(()) * jnp.log(args.temp_value)
+        else:
+            self.log_temperature = self.param('temperature', lambda key: jnp.zeros(()))
 
     @nn.compact
     def __call__(self, s , a, key, augment=False, train=False):
@@ -71,10 +75,8 @@ class SA_encoder(nn.Module):
         # if enabled, normalize the representations
         if args.normalize_repr:
             x = x / (jnp.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
-            if args.fix_temp:
-                x = x / args.temp_value
-            else:
-                x = x / jnp.exp(self.log_temperature)
+            # jax.debug.print("temperature value is {x}",x=jnp.exp(self.log_temperature))
+            x = x / jnp.exp(self.log_temperature)
         return x
     
 class S_encoder(nn.Module):
@@ -308,3 +310,16 @@ class ICM(nn.Module):
 
     def encode(self, obs):
         return self.obs_encoder(obs)
+
+
+class ForwardDynamics(nn.Module):
+    args: object 
+    # Based on https://arxiv.org/abs/1507.00814
+    def setup(self):
+        args = self.args
+        hidden_sizes_forward_model = [args.icm_hidden_dim]*(args.icm_number_hiddens) + [args.obs_dim]
+        self.forward_model = MLP(layer_sizes=hidden_sizes_forward_model, layer_norm=args.layer_norm, activation=eval(args.activation))
+    def __call__(self, obs, action):
+        args = self.args
+        next_obs_prediction = self.forward_model(jnp.concatenate([obs, action], axis=-1))
+        return next_obs_prediction

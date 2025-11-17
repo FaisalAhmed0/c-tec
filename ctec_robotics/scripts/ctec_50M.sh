@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_50M_monolithic_critic_2"
+WANDB_PROJECT_NAME="ctec_sample_efficient"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=256
 activation="nn.relu"
@@ -16,23 +16,23 @@ checkpoint="--no-checkpoint"
 
 
 #### For humanoid_u_maze, use the following values
-# ENV_NAMES=("humanoid_u_maze")
-# BATCH_SIZES=(256)                           
-# NUM_ENVS_VALUES=(256)                      
-ENV_NAMES=("ant_hardest_maze")
-BATCH_SIZES=(256 1024)                           
-NUM_ENVS_VALUES=(1024)                      
+ENV_NAMES=("humanoid_u_maze")
+BATCH_SIZES=(256)                           
+NUM_ENVS_VALUES=(256)                      
+# ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
+# BATCH_SIZES=(1024)                           
+# NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
-NUM_TIMESTEPS_VALUES=(50000000) 
+NUM_TIMESTEPS_VALUES=(50000000 30000000) 
 NUM_EVALS_VALUES=(500)  # 250 -> 4 updates per epoch, 2000 -
-UNROLL_LENGTHS=(31)        
-runs=(1 2 3) # number of seeds, each seed is chosen randomly (results might slightly differ from the paper resutls)
+UNROLL_LENGTHS=(31 124)        
+runs=(1 2 3 4 5) # number of seeds, each seed is chosen randomly (results might slightly differ from the paper resutls)
 REPS_DIMS=(64)
-USE_COMPLETE_FUTURE_STATE_VALUES=("--no-use_complete_future_state")
+USE_COMPLETE_FUTURE_STATE_VALUES=("--use_complete_future_state")
 CONTR_LOSSES=("infonce")
 EPISODE_LENGTHS=(1000) 
-NORMALIZE_REPS=("--normalize_repr" "--no-normalize_repr")
-energy_fns=("l1" "l2") # contrastive critic function
+NORMALIZE_REPS=("--normalize_repr")
+energy_fns=("l1") # contrastive critic function
 logsumexp_penalty_coeffs=(0.0)
 contrastive_number_hiddenss=(2)
 discountings_crl=(0.99)

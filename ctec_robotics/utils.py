@@ -419,7 +419,19 @@ def visualize_ctec_reward(transition, contrastive_params, key_critic, contrastiv
 ### Normalization utils
 @jax.jit
 def update_rms(state, x):
+    """
+    Running mean and std update.
+
+    Args:
+      state: tuple of (count, mean, M2)
+      x: array of shape (B,), where B is the batch size (or just a single value).
+
+    Returns:
+      updated_state: updated (count, mean, M2)
+      (mean, std): the current mean and std *after* the update.
+    """
     count, mean, M2 = state
+
     count_new = count + 1.0
     delta = x - mean
     mean_new = mean + delta / count_new
@@ -427,6 +439,38 @@ def update_rms(state, x):
     M2_new = M2 + delta * delta2
     std_new = jnp.sqrt(M2_new / count_new)
     return (count_new, mean_new, M2_new), (mean_new, std_new)
+
+
+# -----
+# Example usage of update_rms with vmap:
+
+# Let N = size of state (e.g., 8 tracked statistics), B = batch size to process in parallel
+N = 4   # Number of independent statistics to track
+B = 10  # Batch dimension
+
+# Initial state for each N: (count, mean, M2)
+init_count = jnp.zeros((N,))      # shape (N,)
+init_mean = jnp.zeros((N,))       # shape (N,)
+init_M2 = jnp.zeros((N,))         # shape (N,)
+init_state = (init_count, init_mean, init_M2)  # tuple of arrays (N,)
+
+# x is shape (N, B): for each statistic, B new data points to update with
+key = jax.random.PRNGKey(0)
+x = jax.random.normal(key, (N, B))  # example fake data
+
+# We vmap update_rms so that each N processes its corresponding array of B
+def update_rms_scan(state, x_b):
+    # state: tuple of 3 (), x_b: (B,)
+    def body_fn(carry, x_i):
+        return update_rms(carry, x_i)
+    final_state, (means, stds) = jax.lax.scan(body_fn, state, x_b)
+    # Return the last mean and std, with the final updated state
+    return final_state, (means[-1], stds[-1])
+
+# Apply vmap over N (so each line gets a vector of B for x)
+vmap_update = jax.vmap(update_rms_scan, in_axes=(0, 0))
+final_state, (final_means, final_stds) = vmap_update(init_state, x)
+# final_means/final_stds are each (N,): the last value after B updates for each statistic
 
 # Function to compute incremental mean and std over a 1D stream of data.
 def incremental_mean_std(data):

@@ -16,8 +16,9 @@ import functools
 import model_utils as sac_networks
 import math
 
-from args import CTEC_args
+from args import ICM_args
 from absl import logging
+from jax import lax
 from copy import deepcopy
 from typing import Any, Tuple, TypeVar,Union, NamedTuple, Sequence
 from wandb_osh.hooks import TriggerWandbSyncHook
@@ -38,64 +39,30 @@ from brax.v1 import envs as envs_v1
 from brax.io import model
 from utils import MetricsRecorder, create_env, create_eval_env,\
       DiscretizedDensity, Simple_CSV_logger, get_env_config, \
-        knn_average_distance, render, gamma_schedule, \
+        knn_average_distance, render, update_rms, \
         load_params, save_params, save_args, save_buffer_sample
-from intrinsic_rewards import crl_reward
-from buffers import TrajectoryUniformSamplingQueue
-from losses import make_contrastive_critic_loss as make_contrastive_loss
-from models import ContrastiveCritic, MonolithicCritic
+from intrinsic_rewards import fd_reward
+from buffers import SacTrajectoryUniformSamplingQueue
+from losses import make_fd_loss
+from models import ForwardDynamics
 from wonderwords import RandomWord
-
+from buffers import QueueBase, Generic
 
 
 Metrics = types.Metrics
 
+
+
+
+
 ReplayBufferState = Any
 _PMAP_AXIS_NAME = "i"
-
-
 
 # Transition = types.Transition
 Env = Union[envs.Env, envs_v1.Env, envs_v1.Wrapper]
 State = Union[envs.State, envs_v1.State]
 Transition = types.Transition
 Sample = TypeVar("Sample")
-
-
-
-@flax.struct.dataclass
-class TrainingState:
-    """Contains training state for the learner."""
-
-    policy_optimizer_state: optax.OptState
-    policy_params: Params
-    q_optimizer_state: optax.OptState
-    q_params: Params
-    contrastive_optimizer_state: optax.OptState
-    contrastive_params: Params
-    target_q_params: Params
-    gradient_steps: jnp.ndarray
-    env_steps: jnp.ndarray
-    alpha_optimizer_state: optax.OptState
-    alpha_params: Params
-    normalizer_params: running_statistics.RunningStatisticsState
-    mean_coverage: jnp.ndarray
-    contrastive_params_EMA: Params
-
-
-class Transition(NamedTuple):
-    """Container for a transition."""
-
-    observation: NestedArray
-    next_observation: NestedArray
-    action: NestedArray
-    reward: NestedArray
-    discount: NestedArray
-    extras: NestedArray = ()  # pytype: disable=annotation-type-mismatch  # jax-ndarray
-
-@flax.struct.dataclass
-class CRLNetworks:
-    critic_network: nn.Module
 
 def actor_step(
     env: Env,
@@ -105,6 +72,8 @@ def actor_step(
     extra_fields: Sequence[str] = (),
 ) -> Tuple[State, Transition]:
     """Collect data."""
+    # print(env_state.obs.shape)
+    # input()
     actions, policy_extras = policy(env_state.obs, key)
     nstate = env.step(env_state, actions)
     state_extras = {x: nstate.info[x] for x in extra_fields}
@@ -117,7 +86,43 @@ def actor_step(
         extras={"policy_extras": policy_extras, "state_extras": state_extras},
     )
 
+
+
+@flax.struct.dataclass
+class TrainingState:
+    """Contains training state for the learner."""
+
+    policy_optimizer_state: optax.OptState
+    policy_params: Params
+    q_optimizer_state: optax.OptState
+    q_params: Params
+    fd_optimizer_state: optax.OptState
+    fd_params: Params
+    target_q_params: Params
+    gradient_steps: jnp.ndarray
+    env_steps: jnp.ndarray
+    alpha_optimizer_state: optax.OptState
+    alpha_params: Params
+    normalizer_params: running_statistics.RunningStatisticsState
+    mean_coverage: jnp.ndarray
+    e3b_matrix: jnp.ndarray
+    fd_rms_state: Any
+
+
+class Transition(NamedTuple):
+    """Container for a transition."""
+
+    observation: NestedArray
+    next_observation: NestedArray
+    action: NestedArray
+    reward: NestedArray
+    discount: NestedArray
+    extras: NestedArray = ()  # pytype: disable=annotation-type-mismatch  # jax-ndarray
+
+
 InferenceParams = Tuple[running_statistics.NestedMeanStd, Params]
+
+
                    
 def main(args):
     sgd_to_env = (
@@ -128,7 +133,6 @@ def main(args):
     ) / (args.num_envs * args.unroll_length)
     print(f"SGD steps per env steps: {sgd_to_env}")
     args.sgd_to_env = sgd_to_env
-    args.env_to_sgd = 1/sgd_to_env
 
     args.num_evals_after_init = max(args.num_evals - 1, 1)
     args.env_steps_per_actor_step = args.num_envs * args.unroll_length
@@ -137,15 +141,21 @@ def main(args):
     args.num_training_steps_per_epoch = -(
         -(args.num_timesteps - args.num_prefill_env_steps) // (args.num_evals_after_init * args.env_steps_per_actor_step)
     )
-    # print(f"env_steps_per_actor_step: {args.env_steps_per_actor_step}")
-    # print("Num_prefill_actor_steps: ", args.num_prefill_actor_steps)
+    print(f"env_steps_per_actor_step: {args.env_steps_per_actor_step}")
+    print("Num_prefill_actor_steps: ", args.num_prefill_actor_steps)
     print(f"Number of training steps per epoch: {args.num_training_steps_per_epoch}")
-    print(f"env_to_sgd_steps ratio={1/sgd_to_env}:1")
 
+
+
+    run_name = f"{args.env_name}__{args.exp_name}__{args.seed}"
+
+    
     scratch_path = os.getenv("SCRATCH")
     runs_path = os.path.join(scratch_path, "crl_runs")  
     os.makedirs(runs_path, exist_ok=True)
     exp_dir = os.path.join(args.model, args.env_name, args.run_name_suffix)   
+    # /exp_dir = os.path.join(runs_path, exp_dir)  
+    # os.makedirs(exp_dir, exist_ok=True)
     word = RandomWord().word()
     uid = f"{int(time.time())}_{word}"
     while os.path.exists(f"runs/{exp_dir}/{uid}"):
@@ -203,35 +213,27 @@ def main(args):
         action_repeat=args.action_repeat,
         randomization_fn=v_randomization_fn,
     )
-    #   
 
     obs_size = env.observation_size
     action_size = env.action_size
+    args.obs_dim = obs_size
+    args.action_dim = action_size
     print(f"Obs size: {obs_size}")
     print(f"action size: {action_size}")
     # Env init
     env_keys = jax.random.split(env_key, args.num_envs // jax.process_count())
     env_keys = jnp.reshape(env_keys, (local_devices_to_use, -1) + env_keys.shape[1:])
     env_state = jax.pmap(env.reset)(env_keys)
-    args.obs_dim = env.state_dim
-    args.action_dim = env.action_size
 
 
     # Network setup
     network_factory = sac_networks.make_sac_networks
-    def pre_process(x,y):
-        if x.ndim > 1:
-            x = x[:, :env.state_dim]
-        else:
-            x = x[:env.state_dim]
-        return x
     # make sac networks and optimizers
     normalize_fn = lambda x, y: x
     agent_hidden_dims = [args.agent_hidden_dim]*args.agent_number_hiddens
     sac_network = network_factory(
-        observation_size=env.state_dim, action_size=action_size, preprocess_observations_fn=pre_process, layer_norm=args.layer_norm, activation=eval(args.agent_activation), hidden_layer_sizes=agent_hidden_dims
+        observation_size=obs_size, action_size=action_size, preprocess_observations_fn=normalize_fn, layer_norm=args.layer_norm, activation=eval(args.activation), hidden_layer_sizes=agent_hidden_dims
     )
-    
     # 
     make_policy = sac_networks.make_inference_fn(sac_network)
 
@@ -240,22 +242,13 @@ def main(args):
     policy_optimizer = optax.adam(learning_rate=args.actor_lr)
     q_optimizer = optax.adam(learning_rate=args.critic_lr)
 
+    # make icm model and optimizer
+    args.icm_observation_dim = env.goal_indices.shape[-1]
+    fd_network = ForwardDynamics(args=args)
+    # import pdb;pdb.set_trace()
+    fd_optimizer = optax.adam(learning_rate=args.icm_lr)
 
-    if args.crl_observation_dim > 0:
-        args.crl_goal_indices = jnp.arange(args.crl_observation_dim)
-    else:
-        args.crl_goal_indices = jnp.arange(env.state_dim) if args.use_complete_future_state else env.goal_indices
-
-
-    if args.crl_observation_dim == 0:
-        args.crl_observation_dim = env.state_dim if args.use_complete_future_state else env.goal_indices.shape[-1]
-
-    # Make the contrastive critic
-    if args.use_mono_critic:
-        contrastive_network = MonolithicCritic(args)
-    else:
-        contrastive_network = ContrastiveCritic(args)
-    contrastive_optimizer = optax.adam(learning_rate=args.critic_lr)
+    args.icm_goal_indices = jnp.arange(env.state_dim) if args.use_complete_future_state else env.goal_indices
     
     # create the transition object
     dummy_obs = jnp.zeros((obs_size,))
@@ -277,7 +270,7 @@ def main(args):
 
     # create replay buffer
     replay_buffer = jit_wrap(
-        TrajectoryUniformSamplingQueue(
+        SacTrajectoryUniformSamplingQueue(
             max_replay_size=args.max_replay_size,
             dummy_data_sample=dummy_transition,
             sample_batch_size=args.batch_size,
@@ -290,7 +283,7 @@ def main(args):
     alpha_loss, critic_loss, actor_loss = sac_losses.make_losses(
         sac_network=sac_network, reward_scaling=args.reward_scaling, discounting=args.discounting, action_size=action_size
     )
-    # contrastive_loss = make_contrastive_loss(contrastive_network)
+    fd_loss = make_fd_loss(fd_network)
     alpha_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         alpha_loss, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
@@ -300,22 +293,20 @@ def main(args):
     actor_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
-    
-    crl_networks = CRLNetworks(
-        critic_network=contrastive_network
+    fd_update = gradients.gradient_update_fn(
+        fd_loss, fd_optimizer,  pmap_axis_name=_PMAP_AXIS_NAME
     )
-    contrastive_loss = make_contrastive_loss(crl_networks, args)
-    contrastive_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
-        contrastive_loss, contrastive_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    
 
     print(f"Experiment directory (run_dir) is: {run_dir}")
-
+    # 
     args.run_dir = run_dir
     args.ckpt_dir = ckpt_dir
+    args.run_name = run_name
+    # 
     save_args(args, run_dir)
 
     if args.track:
+
         if args.wandb_group ==  '.':
             args.wandb_group = None
             
@@ -326,7 +317,7 @@ def main(args):
             group=args.wandb_group,
             # dir=args.wandb_dir,
             config=vars(args),
-            name="_".join(exp_dir.split("/")),
+            name=run_name,
             monitor_gym=True,
             save_code=True,
         )
@@ -336,8 +327,11 @@ def main(args):
             trigger_sync = TriggerWandbSyncHook()
 
 
-    density = DiscretizedDensity(goal_dim=env.goal_indices.shape[-1], bin_width=0.5, run_folder=run_dir)
 
+    if "arm" in args.env_name:
+        density = DiscretizedDensity(goal_dim=env.goal_indices.shape[-1], bin_width=1.5, run_folder=run_dir)
+    else:
+        density = DiscretizedDensity(goal_dim=env.goal_indices.shape[-1], bin_width=0.5, run_folder=run_dir)
 
     ######## Methods #######
     def _unpmap(v):
@@ -348,36 +342,52 @@ def main(args):
     future_obs_size: int,
     local_devices_to_use: int,
     sac_network: sac_networks.SACNetworks,
-    contrastive_network: nn.Module,
+    fd_network: nn.Module,
     alpha_optimizer: optax.GradientTransformation,
     policy_optimizer: optax.GradientTransformation,
     q_optimizer: optax.GradientTransformation,
-    contrastive_optimizer: optax.GradientTransformation,
+    fd_optimizer: optax.GradientTransformation,
 ) -> TrainingState:
+        
+        rms_state_shape = (args.num_envs//args.batch_size) * args.episode_length
+        fd_rms_state = (jnp.zeros(rms_state_shape, ), jnp.zeros(rms_state_shape,), jnp.ones((rms_state_shape, )))
         """Inits the training state and replicates it over devices."""
-        key_policy, key_q, key_contrastive = jax.random.split(key, num=3)
+        key_policy, key_q, key_icm = jax.random.split(key, num=3)
         log_alpha = jnp.asarray(0.0, dtype=jnp.float32)
         alpha_optimizer_state = alpha_optimizer.init(log_alpha)
-        dummy_state = jnp.zeros((1, obs_size))
-        dummy_action = jnp.zeros((1, args.action_dim))
-        dummy_future_state = jnp.zeros((1, future_obs_size))
+        dummy_state = jnp.zeros((1, future_obs_size))
+        dummy_action = jnp.zeros((1, action_size))
+        # import pdb;pdb.set_trace()
+        dummy_obs = jnp.zeros((1, obs_size))
 
         policy_params = sac_network.policy_network.init(key_policy)
         policy_optimizer_state = policy_optimizer.init(policy_params)
         q_params = sac_network.q_network.init(key_q)
         q_optimizer_state = q_optimizer.init(q_params)
-        contrastive_params = contrastive_network.init(key_contrastive, dummy_state, dummy_action, dummy_future_state, key_contrastive, False)
-        contrastive_optimizer_state = contrastive_optimizer.init(contrastive_params)
+        fd_params = fd_network.init(key_icm, dummy_obs, dummy_action)
+        fd_optimizer_state = fd_optimizer.init(fd_params)
 
         normalizer_params = running_statistics.init_state(specs.Array((obs_size,), jnp.dtype("float32")))
+
+        # initialize E3B state
+        e3b_init_state = (
+                    jnp.repeat(
+                        jnp.expand_dims(
+                            jnp.identity(config.icm_embed_dim), axis=0
+                        ),
+                        config.num_envs,
+                        axis=0,
+                    )
+                    / config.e3b_lambda
+                )
 
         training_state = TrainingState(
             policy_optimizer_state=policy_optimizer_state,
             policy_params=policy_params,
             q_optimizer_state=q_optimizer_state,
             q_params=q_params,
-            contrastive_optimizer_state=contrastive_optimizer_state,
-            contrastive_params=contrastive_params,
+            fd_optimizer_state=fd_optimizer_state,
+            fd_params=fd_params,
             target_q_params=q_params,
             gradient_steps=jnp.zeros(()),
             env_steps=jnp.zeros(()),
@@ -385,7 +395,8 @@ def main(args):
             alpha_params=log_alpha,
             normalizer_params=normalizer_params,
             mean_coverage=jnp.zeros(()),
-            contrastive_params_EMA=contrastive_params
+            e3b_matrix=e3b_init_state,
+            fd_rms_state=fd_rms_state
         )
         return jax.device_put_replicated(training_state, jax.local_devices()[:local_devices_to_use])
 
@@ -404,7 +415,7 @@ def main(args):
             key_alpha,
             optimizer_state=training_state.alpha_optimizer_state,
         )
-        alpha = jnp.exp(training_state.alpha_params) * args.entropy_reg
+        alpha = jnp.exp(training_state.alpha_params)
         critic_loss, q_params, q_optimizer_state = critic_update(
             training_state.q_params,
             training_state.policy_params,
@@ -415,8 +426,6 @@ def main(args):
             key_critic,
             optimizer_state=training_state.q_optimizer_state,
         )
-        
-        # 
         actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
             training_state.normalizer_params,
@@ -426,55 +435,49 @@ def main(args):
             key_actor,
             optimizer_state=training_state.policy_optimizer_state,
         )
-
-        (contrastive_loss, contrastive_metrics), contrastive_params, contrastive_optimizer_state  = contrastive_update(
-            training_state.contrastive_params,
-            transitions, 
-            key_critic,
-            optimizer_state=training_state.contrastive_optimizer_state)
+        fd_loss, fd_params, fd_optimizer_state = fd_update(
+            training_state.fd_params, 
+            training_state.normalizer_params,
+            transitions,
+            env.goal_indices,
+            args.icm_forward_loss_weight,
+            optimizer_state=training_state.fd_optimizer_state
+        )
 
         # calculate the knn covarege metric        
-        coverage = knn_average_distance(transitions.extras["future_state"][:,env.goal_indices])
+        coverage = knn_average_distance(transitions.observation[:,env.goal_indices])
         training_state = training_state.replace(mean_coverage=(training_state.mean_coverage + coverage.mean()))
-        actions_mean = transitions.action.mean()
-        actions_std = transitions.action.std()
 
 
         new_target_q_params = jax.tree_util.tree_map(
             lambda x, y: x * (1 - args.tau) + y * args.tau, training_state.target_q_params, q_params
         )
 
+        # print(training_state.mean_coverage/training_state.gradient_steps)
         metrics = {
             "critic_loss": critic_loss,
             "actor_loss": actor_loss,
             "alpha_loss": alpha_loss,
-            "contrastive_loss": contrastive_loss,
+            "fd_loss": fd_loss,
             "alpha": jnp.exp(alpha_params),
-            "contrastive_reward_mean": transitions.reward.mean(),
-            "contrastive_reward_max": transitions.reward.max(),
-            "contrastive_reward_min": transitions.reward.min(),
+            "fd_reward_mean": transitions.reward.mean(),
+            "fd_reward_max": transitions.reward.max(),
+            "fd_reward_min": transitions.reward.min(),
             "mean_coverage": training_state.mean_coverage/training_state.gradient_steps,
             "knn_coverage": coverage.mean(),
-            "grad_steps": training_state.gradient_steps,
-            "contrastive_loss": contrastive_loss,
-            "actions_mean": actions_mean,
-            "actions_std": actions_std,
+            "grad_steps": training_state.gradient_steps
         }
-        # import pdb;pdb.set_trace()
-        metrics.update(contrastive_metrics)
 
-        # update the EMA
-        updated_ema = jax.tree_util.tree_map(
-            lambda x, y: args.ema * x + (1-args.ema) * y, training_state.contrastive_params_EMA, contrastive_params
-        )
-        
+        # print("I added the e3b matrix into the sgd step, all left is to compute the reward in the get experience function")
+        # fd_rms_state, (means, stds) = jax.lax.scan(update_rms, training_state.fd_rms_state, transitions.next_observation.reshape(-1, obs_size)[:, args.icm_goal_indices] )
+
         new_training_state = TrainingState(
             policy_optimizer_state=policy_optimizer_state,
             policy_params=policy_params,
             q_optimizer_state=q_optimizer_state,
             q_params=q_params,
-            contrastive_optimizer_state=contrastive_optimizer_state,
-            contrastive_params=contrastive_params,
+            fd_optimizer_state=fd_optimizer_state,
+            fd_params=fd_params,
             target_q_params=new_target_q_params,
             gradient_steps=training_state.gradient_steps + 1,
             env_steps=training_state.env_steps,
@@ -482,7 +485,8 @@ def main(args):
             alpha_params=alpha_params,
             normalizer_params=training_state.normalizer_params,
             mean_coverage=training_state.mean_coverage,
-            contrastive_params_EMA=updated_ema
+            e3b_matrix=training_state.e3b_matrix,
+            fd_rms_state=training_state.fd_rms_state, 
             
         )
         return (new_training_state, key), metrics
@@ -490,19 +494,22 @@ def main(args):
     def get_experience(
         normalizer_params: running_statistics.RunningStatisticsState,
         policy_params: Params,
+        fd_params: Params,
         env_state: Union[envs.State, envs_v1.State],
         buffer_state: ReplayBufferState,
         key: PRNGKey,
+        e3b_matrix: jnp.ndarray,
     ) -> Tuple[
         running_statistics.RunningStatisticsState,
         Union[envs.State, envs_v1.State],
         ReplayBufferState,
     ]:
         policy = make_policy((normalizer_params, policy_params))
+        
 
         @jax.jit
         def f(carry, unused_t):
-            env_state, current_key = carry
+            env_state, current_key, e3b_matrix = carry
             current_key, next_key = jax.random.split(current_key)
             env_state, transition = actor_step(
                 env,
@@ -514,19 +521,19 @@ def main(args):
                     "seed",
                 ),
             )
-            return (env_state, next_key), transition
+            return (env_state, next_key, e3b_matrix), transition
 
-        (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=args.unroll_length)
+        (env_state, _, e3b_matrix), data = jax.lax.scan(f, (env_state, key, e3b_matrix), (), length=args.unroll_length)
 
-        # normalizer_params = running_statistics.update(
-        #     normalizer_params,
-        #     jax.tree_util.tree_map(
-        #         lambda x: jnp.reshape(x, (-1,) + x.shape[2:]), data
-        #     ).observation,  # so that batch size*unroll_length is the first dimension
-        #     pmap_axis_name=_PMAP_AXIS_NAME,
-        # )
+        normalizer_params = running_statistics.update(
+            normalizer_params,
+            jax.tree_util.tree_map(
+                lambda x: jnp.reshape(x, (-1,) + x.shape[2:]), data
+            ).observation,  # so that batch size*unroll_length is the first dimension
+            pmap_axis_name=_PMAP_AXIS_NAME,
+        )
         buffer_state = replay_buffer.insert(buffer_state, data)
-        return normalizer_params, env_state, buffer_state
+        return normalizer_params, env_state, buffer_state, e3b_matrix
 
     def training_step(
         training_state: TrainingState,
@@ -535,16 +542,19 @@ def main(args):
         key: PRNGKey,
     ) -> Tuple[TrainingState, Union[envs.State, envs_v1.State], ReplayBufferState, Metrics]:
         experience_key, training_key = jax.random.split(key)
-        normalizer_params, env_state, buffer_state = get_experience(
+        normalizer_params, env_state, buffer_state, e3b_matrix = get_experience(
             training_state.normalizer_params,
             training_state.policy_params,
+            training_state.fd_params,
             env_state,
             buffer_state,
             experience_key,
+            training_state.e3b_matrix
         )
         training_state = training_state.replace(
             normalizer_params=normalizer_params,
             env_steps=training_state.env_steps + args.env_steps_per_actor_step,
+            e3b_matrix=e3b_matrix
         )
 
         training_state, buffer_state, metrics = additional_sgds(training_state, buffer_state, training_key)
@@ -560,16 +570,19 @@ def main(args):
             del unused
             training_state, env_state, buffer_state, key = carry
             key, new_key = jax.random.split(key)
-            new_normalizer_params, env_state, buffer_state = get_experience(
+            new_normalizer_params, env_state, buffer_state, e3b_matrix = get_experience(
                 training_state.normalizer_params,
                 training_state.policy_params,
+                training_state.fd_params,
                 env_state,
                 buffer_state,
                 key,
+                training_state.e3b_matrix
             )
             new_training_state = training_state.replace(
                 normalizer_params=new_normalizer_params,
                 env_steps=training_state.env_steps + args.env_steps_per_actor_step,
+                e3b_matrix=e3b_matrix   
             )
             return (new_training_state, env_state, buffer_state, new_key), ()
 
@@ -588,10 +601,8 @@ def main(args):
         buffer_state, transitions = replay_buffer.sample(buffer_state)
 
         batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
-        # 
-
-        transitions = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0, None, None, None))(
-            config, env, transitions, batch_keys, args.crl_goal_indices, training_state.contrastive_params, crl_networks.critic_network.apply
+        transitions = jax.vmap(SacTrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0))(
+            config, env, transitions, batch_keys
         )
 
         # Shuffle transitions and reshape them into (number_of_sgd_steps, batch_size, ...)
@@ -606,11 +617,15 @@ def main(args):
             transitions,
         )
 
-        crl_rewards = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
+
+        # # Compute RND reward, and replace the task reward with it.
+        fd_rewards, fd_rms_state = fd_reward(fd_network, training_state.fd_params, transitions, env.goal_indices, training_state.fd_rms_state, args.rwd_rms)
         transitions = transitions._replace(
-            reward=crl_rewards
+            reward=fd_rewards,
         )
-        
+        # jax.debug.print("rms std is {x}", x=fd_rms_state[-1])
+        training_state = training_state.replace(
+            fd_rms_state=fd_rms_state)
 
         (training_state, _), metrics = jax.lax.scan(sgd_step, (training_state, training_key), transitions)
         return training_state, buffer_state, metrics
@@ -647,6 +662,7 @@ def main(args):
         metrics["buffer_current_size"] = replay_buffer.size(buffer_state)
         metrics = jax.tree_util.tree_map(jnp.mean, metrics)
         return training_state, env_state, buffer_state, metrics
+    ######## Methods #######
 
     # Note that this is NOT a pure jittable method.
     def training_epoch_with_timing(
@@ -678,15 +694,15 @@ def main(args):
     # Training state init
     training_state = _init_training_state(
         key=global_key,
-        obs_size=args.obs_dim,
-        future_obs_size=args.crl_observation_dim,
+        obs_size=obs_size,
+        future_obs_size=env.goal_indices.shape[-1],
         local_devices_to_use=local_devices_to_use,
         sac_network=sac_network,
-        contrastive_network=contrastive_network,
+        fd_network=fd_network,
         alpha_optimizer=alpha_optimizer,
         policy_optimizer=policy_optimizer,
         q_optimizer=q_optimizer,
-        contrastive_optimizer=contrastive_optimizer
+        fd_optimizer=fd_optimizer
     )
     del global_key
 
@@ -731,10 +747,10 @@ def main(args):
         "eval/episode_reward_survive",
         "training/actor_loss",
         "training/critic_loss",
-        "training/contrastive_loss",
-        "training/contrastive_reward_mean",
-        "training/contrastive_reward_max",
-        "training/contrastive_reward_min",
+        "training/fd_loss",
+        "training/fd_reward_mean",
+        "training/fd_reward_max",
+        "training/fd_reward_min",
         "training/knn_coverage",
         "training/mean_coverage",
         "training/sps",
@@ -743,26 +759,18 @@ def main(args):
         "training/alpha_loss",
         "training/entropy",
         "training/grad_steps",
+        "training/fd_reward_std",
         "training/num_visited_unique_state",
         "training/visited_state_entorpy",
-        "training/categorical_accuracy",
-        "training/logits_pos",
-        "training/logits_neg",
-        "training/logsumexp",
-        "training/binary_accuracy",
-        "training/actions_mean",
-        "training/actions_std",
-        "training/gamma_contrastive_model",
-        "training/temperature",
-        "training/logits_std",
-        "training/logits_var"
+        "training/rnd_rms_mean",
+        "training/rnd_rms_std"
     ]
 
-    
     csv_logger_path = os.path.join(run_dir, "logs.csv") 
     metrics_to_collect_logger = metrics_to_collect.copy()
     metrics_to_collect_logger.append("training_steps")
     _logger = Simple_CSV_logger(csv_logger_path, header=metrics_to_collect_logger)
+
 
     def progress(num_steps, metrics):
         for key in metrics_to_collect:
@@ -791,16 +799,6 @@ def main(args):
         training_state, env_state, buffer_state, prefill_keys
     )
 
-    new_state = buffer_state.replace(
-            data=buffer_state.data[0],
-            key=buffer_state.key[0],
-            insert_position= buffer_state.insert_position[0],
-            sample_position= buffer_state.sample_position[0],
-        )
-        ## Testing the discretized density for state coverage
-    _, sample = replay_buffer.sample(new_state)
-    
-
     replay_size = jnp.sum(jax.vmap(replay_buffer.size)(buffer_state)) * jax.process_count()
     logging.info("replay size after prefill %s", replay_size)
     assert replay_size >= args.min_replay_size
@@ -808,20 +806,19 @@ def main(args):
 
     current_step = 0
 
+    # rendering_epochs =[int(t) for t in np.linspace(0, args.num_evals_after_init, 15)][1:]
+    # print("rendering_epochs")
+    # print(rendering_epochs)
     videos_indices = np.linspace(0, args.num_evals_after_init-1, args.num_videos).astype(int)
-    reward_visual_indices = np.linspace(0, args.num_evals_after_init-1, args.num_reward_visuals).astype(int)
-    print(f"Rendering videos indices: {videos_indices}")
-    print(f"Rendering reward_visual_indices: {reward_visual_indices}")
+    print("videos_indices")
+    print(videos_indices)
     
     # training loop!
-    # 
     for epoch in range(args.num_evals_after_init):
         print(f"epcoh: {epoch}")
         if epoch in videos_indices and args.render_agent:
             print("rendering")
             render(make_policy, _unpmap((training_state.normalizer_params, training_state.policy_params)), eval_env_render, run_dir, args.exp_name, seed=args.seed, timestep=current_step)
-
-
         logging.info("step %s", current_step)
         logging.info("epoch %s", epoch)
 
@@ -839,52 +836,29 @@ def main(args):
             insert_position= buffer_state.insert_position[0],
             sample_position= buffer_state.sample_position[0],
         )
-        
+        ## Testing the discretized density for state coverage
         _, sample = replay_buffer.sample(new_state)
-        # import pdb;pdb.set_trace()
-        if args.save_replay_data:
-            path = os.path.join(run_dir, "buffer_data")
-            os.makedirs(path, exist_ok=True)
-            save_buffer_sample(sample, path, current_step)
-        from utils import visualize_ctec_reward
-        if epoch in reward_visual_indices:
-            scatter_img = visualize_ctec_reward(sample, _unpmap(training_state.contrastive_params), local_key, crl_networks.critic_network, args)
-            wandb.log({"Reward_visual": wandb.Image(scatter_img)}, step=current_step)
-        path = os.path.join(run_dir, "buffer_data")
-        os.makedirs(path, exist_ok=True)
-        
         density.update_count(sample.observation[:, :, env.goal_indices], current_step)
         coverage_metrics = {
             "num_visited_unique_state": density.num_states(),
             "visited_state_entorpy": density.entropy()
         }
-        
 
         for k in coverage_metrics:
             training_metrics[f"training/{k}"] = coverage_metrics[k]
 
-        gamma_schedule(args, current_step, args.num_timesteps)
-        training_metrics[f"training/gamma_contrastive_model"] = args.discounting_cl
+        training_metrics["training/rnd_rms_mean"] = training_state.fd_rms_state[1].mean().item()
+        training_metrics["training/rnd_rms_std"] = training_state.fd_rms_state[2].mean().item()
+
+        # 
 
         # Eval and logging
         if process_id == 0:
-            if ckpt_dir and args.checkpoint:
+            if ckpt_dir:
                 # Save current policy.
-                print("Saved Model params")
                 params = _unpmap((training_state.normalizer_params, training_state.policy_params))
-                path = f"{ckpt_dir}/sac_final.pkl"
+                path = f"{ckpt_dir}_sac_{current_step}.pkl"
                 model.save_params(path, params)
-                params = _unpmap((training_state.contrastive_params))
-                if args.save_all_crl_ckpts:
-                     path = f"{ckpt_dir}/sac_crl_{current_step}.pkl"
-                else:
-                    path = f"{ckpt_dir}/sac_crl_final.pkl"
-                model.save_params(path, params)
-                params = _unpmap(training_state.contrastive_params_EMA)
-                path = f"{ckpt_dir}/sac_crl_ema.pkl"
-                model.save_params(path, params)
-                # 
-
 
             # Run evals.
             metrics = evaluator.run_evaluation(
@@ -892,10 +866,10 @@ def main(args):
             )
             metrics["epoch"] = epoch
             logging.info(metrics)
-            # 
             logger_metrics = deepcopy(metrics)
             logger_metrics["training_steps"] = current_step
             _logger.log(logger_metrics)
+
             progress(current_step, metrics)
 
     total_steps = current_step
@@ -908,7 +882,35 @@ def main(args):
     brax_pmap.assert_is_replicated(training_state)
     logging.info("total steps: %s", total_steps)
     brax_pmap.synchronize_hosts()
+
+
+
     
 if __name__ == "__main__":
-    args = tyro.cli(CTEC_args)
+    args = tyro.cli(ICM_args)
     main(args)
+
+
+
+
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+    
+    
+        
+# (50000000 - 1024 x 1000) / 50 x 1024 x 62 = 15        #number of actor steps per epoch (which is equal to the number of training steps)
+# 1024 x 999 / 256 = 4000                               #number of gradient steps per actor step 
+# 1024 x 62 / 4000 = 16                                 #ratio of env steps per gradient step

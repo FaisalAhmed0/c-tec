@@ -17,12 +17,12 @@ logsumexp_penalty_coeff=0.1
 
 
 #### For humanoid_u_maze, use the following values
-ENV_NAMES=("humanoid_u_maze")
-BATCH_SIZES=(256)                           
-NUM_ENVS_VALUES=(256)                      
-# ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
-# BATCH_SIZES=(1024)                           
-# NUM_ENVS_VALUES=(1024)                      
+# ENV_NAMES=("humanoid_u_maze")
+# BATCH_SIZES=(256)                           
+# NUM_ENVS_VALUES=(256)                      
+ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
+BATCH_SIZES=(1024)                           
+NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
 NUM_TIMESTEPS_VALUES=(500000000) 
 NUM_EVALS_VALUES=(2000)                    
@@ -33,7 +33,7 @@ CONTR_LOSSES=("infonce")
 EPISODE_LENGTHS=(1000) 
 energy_fns=("l1") # contrastive critic function
 contrastive_number_hiddenss=(2)
-discountings_crl=(0.9 0.7 0.5 0.3)
+discountings_crl=(0.99 0.9 0.7 0.5 0.3)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
 
