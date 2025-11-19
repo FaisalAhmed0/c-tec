@@ -241,7 +241,8 @@ def make_train(config):
 
         # Ensure the last step is terminal.
         dones = dones.at[-1].set(1)
-        future_obs = jnp.zeros_like(obs)
+        # future_obs = jnp.zeros_like(obs)
+        future_obs = jnp.zeros(shape=(obs.shape[0], obs.shape[1] + 1))  # The plus is for the indext of the time steps
         all_indices = jnp.arange(max_steps)
         rngs = jax.random.split(rng, max_steps)
 
@@ -268,7 +269,8 @@ def make_train(config):
             future_timestep = jax.random.choice(rngs[0], all_indices, p=probs, shape=())
 
             # Set the future observation for time i.
-            future_obs = future_obs.at[i].set(obs[future_timestep])
+            future_obs_with_inds = jnp.concatenate([obs[future_timestep],future_timestep[None] ], axis=-1)
+            future_obs = future_obs.at[i].set(future_obs_with_inds)
         
         return future_obs
 
@@ -550,10 +552,22 @@ def make_train(config):
                             future_obs = future_obs
                             dones_in = traj_batch.done
                         else:
-                            obs_in = traj_batch.obs.reshape(-1, obs_shape)
-                            action_in = action_onehot.reshape(-1, action_shape)
-                            future_obs = future_obs.reshape(-1, obs_shape)
-                            dones_in = traj_batch.done.reshape(-1, 1)
+                            repeation_factor = 2
+                            # obs_in = traj_batch.obs.reshape(-1, obs_shape)
+                            # action_in = action_onehot.reshape(-1, action_shape)
+                            # future_obs = future_obs.reshape(-1, obs_shape+1)
+                            future_obs_inds = future_obs[:, :, -1].astype(jnp.int64)
+                            # dones_in = traj_batch.done.reshape(-1, 1)
+                            import pdb;pdb.set_trace()
+                            traj_length = traj_batch.obs.shape[0]
+                            traj_ids = jnp.arange(traj_batch.obs.shape[1])
+                            traj_ids = jnp.repeat(traj_ids[:traj_ids.shape[1]//repeation_factor],repeation_factor, axis=0 )
+                            obs_in = traj_batch.obs[:,traj_ids, :]
+                            action_in = traj_batch.action[:,traj_ids, :]
+                            dones_in = traj_batch.done[:,traj_ids, :]
+                            future_obs = traj_batch.obs[future_obs_inds, : , :].reshape(-1, obs_shape)
+
+
                         obs_action_rep, future_obs_rep, log_temp, init_hstate = contrastive_network.apply(model_params, obs_in, action_in, future_obs, dones_in, init_hstate[0])
                         if config["USE_RNN"]:
                             obs_action_rep = obs_action_rep.reshape(-1, config["REPR_DIM"])
