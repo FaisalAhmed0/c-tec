@@ -424,8 +424,23 @@ def make_train(config):
                 _env_step, runner_state, None, config["NUM_STEPS"]
             )
             sample_future_vmap = jax.vmap(sample_future_state, in_axes=(None, 1, 1), out_axes=1)
-            rng = runner_state[-3]
-            future_obs_batch = sample_future_vmap(rng, traj_batch.obs, traj_batch.done)
+            rng = runner_state[-3]            
+            def repeat_traj_batch(traj_batch, repetition_factor):
+                repeated_traj = {}
+                fields_to_repeat = ["obs", "action", "done"]
+                batch_size = config["NUM_ENVS"]
+                for field, value in traj_batch._asdict().items():
+                    if field in fields_to_repeat:
+                        value_repeated = jnp.repeat(value[:, :batch_size//repetition_factor, ...], repetition_factor, axis=1)
+                        repeated_traj[field] = value_repeated
+                return Transition(
+                    repeated_traj["done"], repeated_traj["action"], None, None, None, repeated_traj["obs"], None
+                )
+
+                
+            repeated_traj = repeat_traj_batch(traj_batch, config["REPETITION_FACTOR"])
+            # import pdb;pdb.set_trace()
+            future_obs_batch = sample_future_vmap(rng, repeated_traj.obs, repeated_traj.done)
 
             # CALCULATE ADVANTAGE
             (
@@ -539,7 +554,7 @@ def make_train(config):
             def _update_epoch(update_state, unused):
                 def _update_minbatch(train_state, batch_info):
                     train_state, crl_state = train_state
-                    init_hstate, traj_batch, advantages, targets, future_obs_batch = batch_info
+                    init_hstate, traj_batch, advantages, targets, repeated_traj_batch, future_obs_batch = batch_info
 
                     # update the contrastive model
                     def _crl_loss(model_params, traj_batch, future_obs, init_hstate):
@@ -552,20 +567,11 @@ def make_train(config):
                             future_obs = future_obs
                             dones_in = traj_batch.done
                         else:
-                            repeation_factor = 2
-                            # obs_in = traj_batch.obs.reshape(-1, obs_shape)
-                            # action_in = action_onehot.reshape(-1, action_shape)
-                            # future_obs = future_obs.reshape(-1, obs_shape+1)
-                            future_obs_inds = future_obs[:, :, -1].astype(jnp.int64)
-                            # dones_in = traj_batch.done.reshape(-1, 1)
-                            import pdb;pdb.set_trace()
-                            traj_length = traj_batch.obs.shape[0]
-                            traj_ids = jnp.arange(traj_batch.obs.shape[1])
-                            traj_ids = jnp.repeat(traj_ids[:traj_ids.shape[1]//repeation_factor],repeation_factor, axis=0 )
-                            obs_in = traj_batch.obs[:,traj_ids, :]
-                            action_in = traj_batch.action[:,traj_ids, :]
-                            dones_in = traj_batch.done[:,traj_ids, :]
-                            future_obs = traj_batch.obs[future_obs_inds, : , :].reshape(-1, obs_shape)
+                            obs_in = traj_batch.obs.reshape(-1, obs_shape)
+                            action_in = action_onehot.reshape(-1, action_shape)
+                            dones_in = traj_batch.done.reshape(-1, 1)
+                            future_obs = future_obs.reshape(-1, obs_shape+1)[:, :-1]
+                            # jax.debug.print("future_obs: {x}",x=future_obs[..., -1])
 
 
                         obs_action_rep, future_obs_rep, log_temp, init_hstate = contrastive_network.apply(model_params, obs_in, action_in, future_obs, dones_in, init_hstate[0])
@@ -649,7 +655,7 @@ def make_train(config):
                         # update the contrastive model
                         
                         crl_grad_fn = jax.value_and_grad(_crl_loss, has_aux=False)
-                        crl_loss, crl_grad = crl_grad_fn(crl_state["crl_model"].params, traj_batch, future_obs_batch, init_hstate)
+                        crl_loss, crl_grad = crl_grad_fn(crl_state["crl_model"].params, repeated_traj_batch, future_obs_batch, init_hstate)
                         crl_state["crl_model"] = crl_state["crl_model"].apply_gradients(grads=crl_grad)
                         losses = (total_loss, crl_loss)
                     return (train_state, crl_state), (total_loss, losses)
@@ -666,7 +672,7 @@ def make_train(config):
 
                 rng, _rng = jax.random.split(rng)
                 permutation = jax.random.permutation(_rng, config["NUM_ENVS"])
-                batch = (init_hstate, traj_batch, advantages, targets, future_obs_batch)
+                batch = (init_hstate, traj_batch, advantages, targets, repeated_traj, future_obs_batch)
 
                 shuffled_batch = jax.tree.map(
                     lambda x: jnp.take(x, permutation, axis=1), batch

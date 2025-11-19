@@ -292,7 +292,7 @@ def ctec_rnn_args(sys):
     parser.add_argument("--optimistic_reset_ratio", type=int, default=16)
     # Contrastive
     parser.add_argument("--contrastive_hidden_dim", type=int, default=1024)
-    parser.add_argument("--contrastive_number_hiddens", type=int, default=2)
+    parser.add_argument("--contrastive_number_hiddens", type=int, default=3)
     parser.add_argument("--embed_obs", type=int, default=0)
     parser.add_argument("--repr_dim", type=int, default=64)
     parser.add_argument("--gamma_cl", type=float, default=0.3)
@@ -305,6 +305,7 @@ def ctec_rnn_args(sys):
     parser.add_argument("--activation_crl", type=str, default="nn.relu")
     parser.add_argument("--similarity_measure", type=str, default="l2")
     parser.add_argument("--contrastive_loss", type=str, default="infonce")
+    parser.add_argument("--repetition_factor", type=int, default=1)
     parser.add_argument("--logsumexp_penalty_coeff", type=float, default=0.0)
     parser.add_argument("--use_mc_reward", type=int, default=1) # use the Monte Carlo C-TeC reward
     parser.add_argument("--use_norm_constant", type=int, default=0)
