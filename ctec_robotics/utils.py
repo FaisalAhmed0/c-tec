@@ -215,8 +215,8 @@ class DiscretizedDensity:
         batch_obs = batch_obs.reshape(-1, self.goal_dim)
         batch_obs = np.array(batch_obs)
 
-        print("saved new future states")
-        np.savez_compressed(f"{self.visited_states_path}/{env_step}", data=batch_obs)
+        # print("saved new future states")
+        # np.savez_compressed(f"{self.visited_states_path}/{env_step}", data=batch_obs)
 
         # Vectorize the discretization process over the batch
         batch_obs = batch_obs / self._bin_width

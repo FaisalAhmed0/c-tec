@@ -283,7 +283,7 @@ def main(args):
             sample_batch_size=args.batch_size,
             num_envs=args.num_envs,
             episode_length=args.episode_length,
-            repetition_factor=2
+            repetition_factor=args.repetition_factor
         )
     )
     

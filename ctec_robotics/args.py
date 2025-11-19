@@ -111,6 +111,7 @@ class CTEC_args:
     use_mono_critic: bool = False
     num_reward_visuals: int = 50
     visualize_reward: bool = False
+    repetition_factor: int = 1
 
 
 
