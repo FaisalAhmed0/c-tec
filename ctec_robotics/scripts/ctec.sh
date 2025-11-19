@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_ablation_contrastive_model_discounts"
+WANDB_PROJECT_NAME="ctec_default_run"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
@@ -13,27 +13,29 @@ ENTROPY_REG="--entropy_reg"
 run_name_suffix="ctec"
 checkpoint="--no-checkpoint"
 logsumexp_penalty_coeff=0.1
+visualize_reward="--visualize_reward"
 
 
 
 #### For humanoid_u_maze, use the following values
-ENV_NAMES=("humanoid_u_maze")
-BATCH_SIZES=(256)                           
-NUM_ENVS_VALUES=(256)                      
+# ENV_NAMES=("humanoid_u_maze")
+# BATCH_SIZES=(256)                           
+# NUM_ENVS_VALUES=(256)                      
 # ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
-# BATCH_SIZES=(1024)                           
-# NUM_ENVS_VALUES=(1024)                      
+ENV_NAMES=("ant_hardest_maze")
+BATCH_SIZES=(1024)                           
+NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
 NUM_TIMESTEPS_VALUES=(500000000) 
 NUM_EVALS_VALUES=(2000)                    
 runs=(1 2 3 4 5) # number of seeds, each seed is chosen randomly (results might slightly differ from the paper resutls)
 REPS_DIMS=(64)
-USE_COMPLETE_FUTURE_STATE_VALUES=("--use_complete_future_state")
+USE_COMPLETE_FUTURE_STATE_VALUES=("--no-use_complete_future_state")
 CONTR_LOSSES=("infonce")
 EPISODE_LENGTHS=(1000) 
 energy_fns=("l1") # contrastive critic function
 contrastive_number_hiddenss=(2)
-discountings_crl=(0.9 0.7 0.5 0.3)
+discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
 
@@ -65,6 +67,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         ${USE_COMPLETE_FUTURE_STATE} \
                                         ${LAYER_NORM} \
                                         ${ENTROPY_REG} \
+                                        ${visualize_reward} \
                                         --multiplier_num_sgd_steps=${SGD_STEPS_FACTR} \
                                         --wandb_project_name=\"${WANDB_PROJECT_NAME}\" \
                                         --batch_size=${BATCH_SIZE} \

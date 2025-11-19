@@ -18,12 +18,12 @@ FIX_TEMP="--fix_temp"
 
 
 #### For humanoid_u_maze, use the following values
-# ENV_NAMES=("humanoid_u_maze")
-# BATCH_SIZES=(256)                           
-# NUM_ENVS_VALUES=(256)                      
-ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
-BATCH_SIZES=(1024)                           
-NUM_ENVS_VALUES=(1024)                      
+ENV_NAMES=("humanoid_u_maze")
+BATCH_SIZES=(256)                           
+NUM_ENVS_VALUES=(256)                      
+# ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
+# BATCH_SIZES=(1024)                           
+# NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
 NUM_TIMESTEPS_VALUES=(500000000) 
 NUM_EVALS_VALUES=(2000)                    

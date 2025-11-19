@@ -110,6 +110,7 @@ class CTEC_args:
     save_replay_data: bool = False
     use_mono_critic: bool = False
     num_reward_visuals: int = 50
+    visualize_reward: bool = False
 
 
 
@@ -382,3 +383,11 @@ class ICM_args:
     e3b_lambda: float = 0.1
     rwd_rms: bool = True
     use_complete_future_state: bool = True
+    
+
+
+
+
+
+
+    

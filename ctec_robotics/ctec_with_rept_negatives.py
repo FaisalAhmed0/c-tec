@@ -41,7 +41,7 @@ from utils import MetricsRecorder, create_env, create_eval_env,\
         knn_average_distance, render, gamma_schedule, \
         load_params, save_params, save_args, save_buffer_sample
 from intrinsic_rewards import crl_reward
-from buffers import TrajectoryUniformSamplingQueue
+from buffers_editing import TrajectoryUniformSamplingQueue
 from losses import make_contrastive_critic_loss as make_contrastive_loss
 from models import ContrastiveCritic, MonolithicCritic
 from wonderwords import RandomWord
@@ -283,6 +283,7 @@ def main(args):
             sample_batch_size=args.batch_size,
             num_envs=args.num_envs,
             episode_length=args.episode_length,
+            repetition_factor=2
         )
     )
     
@@ -324,6 +325,7 @@ def main(args):
             entity=args.wandb_entity,
             mode=args.wandb_mode,
             group=args.wandb_group,
+            # mode=args.wandb_mode,
             config=vars(args),
             name="_".join(exp_dir.split("/")),
             monitor_gym=True,
@@ -393,6 +395,7 @@ def main(args):
     ) -> Tuple[Tuple[TrainingState, PRNGKey], Metrics]:
         training_state, key = carry
 
+        transitions, transitions_contrastive = transitions
         key, key_alpha, key_critic, key_actor = jax.random.split(key, 4)
 
         alpha_loss, alpha_params, alpha_optimizer_state = alpha_update(
@@ -428,7 +431,7 @@ def main(args):
 
         (contrastive_loss, contrastive_metrics), contrastive_params, contrastive_optimizer_state  = contrastive_update(
             training_state.contrastive_params,
-            transitions, 
+            transitions_contrastive, 
             key_critic,
             optimizer_state=training_state.contrastive_optimizer_state)
 
@@ -584,13 +587,17 @@ def main(args):
         key: PRNGKey,
     ) -> Tuple[TrainingState, ReplayBufferState, Metrics]:
         experience_key, training_key, sampling_key = jax.random.split(key, 3)
-        buffer_state, transitions = replay_buffer.sample(buffer_state)
+        buffer_state, transitions, transitions_contrastive = replay_buffer.sample(buffer_state)
 
         batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
         # 
 
         transitions = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0, None, None, None))(
             config, env, transitions, batch_keys, args.crl_goal_indices, training_state.contrastive_params, crl_networks.critic_network.apply
+        )
+
+        transitions_contrastive = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0, None, None, None))(
+            config, env, transitions_contrastive, batch_keys, args.crl_goal_indices, training_state.contrastive_params, crl_networks.critic_network.apply
         )
 
         # Shuffle transitions and reshape them into (number_of_sgd_steps, batch_size, ...)
@@ -605,13 +612,23 @@ def main(args):
             transitions,
         )
 
+        transitions_contrastive = jax.tree_util.tree_map(
+            lambda x: jnp.reshape(x, (-1,) + x.shape[2:], order="F"),
+            transitions_contrastive,
+        )
+        transitions_contrastive = jax.tree_util.tree_map(lambda x: x[permutation], transitions_contrastive)
+        transitions_contrastive = jax.tree_util.tree_map(
+            lambda x: jnp.reshape(x, (-1, args.batch_size) + x.shape[1:]),
+            transitions_contrastive,
+        )
+
         crl_rewards = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
         transitions = transitions._replace(
             reward=crl_rewards
         )
         
 
-        (training_state, _), metrics = jax.lax.scan(sgd_step, (training_state, training_key), transitions)
+        (training_state, _), metrics = jax.lax.scan(sgd_step, (training_state, training_key), (transitions, transitions_contrastive))
         return training_state, buffer_state, metrics
 
     def scan_additional_sgds(n, ts, bs, a_sgd_key):
@@ -797,7 +814,7 @@ def main(args):
             sample_position= buffer_state.sample_position[0],
         )
         ## Testing the discretized density for state coverage
-    _, sample = replay_buffer.sample(new_state)
+    _, sample, _ = replay_buffer.sample(new_state)
     
 
     replay_size = jnp.sum(jax.vmap(replay_buffer.size)(buffer_state)) * jax.process_count()
@@ -839,14 +856,14 @@ def main(args):
             sample_position= buffer_state.sample_position[0],
         )
         
-        _, sample = replay_buffer.sample(new_state)
+        _, sample, _ = replay_buffer.sample(new_state)
         # import pdb;pdb.set_trace()
         if args.save_replay_data:
             path = os.path.join(run_dir, "buffer_data")
             os.makedirs(path, exist_ok=True)
             save_buffer_sample(sample, path, current_step)
         from utils import visualize_ctec_reward
-        if epoch in reward_visual_indices and args.visualize_reward:
+        if epoch in reward_visual_indices:
             scatter_img = visualize_ctec_reward(sample, _unpmap(training_state.contrastive_params), local_key, crl_networks.critic_network, args)
             if args.track:
                 wandb.log({"Reward_visual": wandb.Image(scatter_img)}, step=current_step)
