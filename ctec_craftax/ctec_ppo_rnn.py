@@ -579,7 +579,7 @@ def make_train(config):
                             obs_action_rep = obs_action_rep.reshape(-1, config["REPR_DIM"])
                             future_obs_rep = future_obs_rep.reshape(-1, config["REPR_DIM"])
                         sim = similarity_method(obs_action_rep, future_obs_rep)
-                        loss = contrastive_losses()[config["CONTRASTIVE_LOSS"]](sim, config["UPDATE_PROPORTION"], _rng)
+                        loss = contrastive_losses()[config["CONTRASTIVE_LOSS"]](sim, config["UPDATE_PROPORTION"], _rng, config["REWEIGH_POSITIVES"])
                         # add the regularization term
                         logsumexp = jax.nn.logsumexp(sim + 1e-6, axis=-1)
                         loss += config["LOGSUMEXP_PENALTY_COEFF"] * jnp.mean(logsumexp**2)

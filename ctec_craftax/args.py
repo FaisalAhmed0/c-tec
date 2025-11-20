@@ -291,6 +291,7 @@ def ctec_rnn_args(sys):
     )
     parser.add_argument("--optimistic_reset_ratio", type=int, default=16)
     # Contrastive
+    
     parser.add_argument("--contrastive_hidden_dim", type=int, default=1024)
     parser.add_argument("--contrastive_number_hiddens", type=int, default=3)
     parser.add_argument("--embed_obs", type=int, default=0)
@@ -298,6 +299,7 @@ def ctec_rnn_args(sys):
     parser.add_argument("--gamma_cl", type=float, default=0.3)
     parser.add_argument("--gamma_cl_reward", type=float, default=0.3)
     parser.add_argument("--temp_value", type=float, default=1.)
+    parser.add_argument("--reweigh_positives", type=int, default=0)
     parser.add_argument("--crl_lr", type=float, default=3e-4)
     parser.add_argument("--task_reward_coef", type=float, default=0)
     parser.add_argument("--crl_reward_coef", type=float, default=1)

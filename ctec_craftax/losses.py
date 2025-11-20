@@ -27,9 +27,15 @@ def symmetric_infonce(logits, update_proportion=1, key=None):
     loss = -jnp.mean(jnp.diag(l_align1 + l_unify1) + jnp.diag(l_align2 + l_unify2))
     return loss
     
-def infonce(logits, update_proportion=1, key=None):
+def infonce(logits, update_proportion=1, key=None, reweigh_positives=False):
     resubs = True
-    l_align, l_unif = log_softmax(logits, axis=1, resubs=resubs)
+    if reweigh_positives:
+        batch_size = logits.shape[0]
+        weight = jnp.ones(shape=(batch_size, batch_size)) 
+        weight = weight.at[jnp.arange(batch_size), jnp.arange(batch_size)].set(jnp.ones(shape=(batch_size))  * (batch_size-1))
+        l_align, l_unif = log_softmax(logits * weight, axis=1, resubs=resubs)
+    else:
+        l_align, l_unif = log_softmax(logits, axis=1, resubs=resubs)
     loss = -jnp.mean(jnp.diag(l_align + l_unif))
     return loss
 
