@@ -11,3 +11,4 @@ exploration/envs/manipulation/__pycache__/arm_binpick_easy.cpython-310.pyc
 exploration/envs/manipulation/__pycache__/arm_reach.cpython-310.pyc
 ctec_robotics/maze_visuals
 state_coverage_over_training
+final_results
