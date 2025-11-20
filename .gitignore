@@ -6,3 +6,5 @@ __pycache__
 
 wandb
 ./*/wandb
+maze_visuals
+final_results
