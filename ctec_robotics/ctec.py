@@ -604,10 +604,9 @@ def main(args):
             lambda x: jnp.reshape(x, (-1, args.batch_size) + x.shape[1:]),
             transitions,
         )
-
         crl_rewards = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
         transitions = transitions._replace(
-            reward=crl_rewards
+            reward=crl_rewards + (args.task_rwd_scale * transitions.reward)
         )
         
 

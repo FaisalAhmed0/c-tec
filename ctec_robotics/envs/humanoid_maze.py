@@ -24,6 +24,14 @@ U_MAZE = [[1, 1, 1, 1, 1],
           [1, G, G, G, 1],
           [1, 1, 1, 1, 1]]
 
+
+U_MAZE_SINGLE_GOAL = [[1, 1, 1, 1, 1],
+          [1, R, 0, 0, 1],
+          [1, 1, 1, 0, 1],
+          [1, G, 0, 0, 1],
+          [1, 1, 1, 1, 1]]
+
+
 U_MAZE_EVAL = [[1, 1, 1, 1, 1],
                [1, R, 0, 0, 1],
                [1, 1, 1, 0, 1],
@@ -83,6 +91,8 @@ def find_goals(structure, size_scaling):
 def make_maze(maze_layout_name, maze_size_scaling):
     if maze_layout_name == "u_maze":
         maze_layout = U_MAZE
+    elif maze_layout_name == "u_maze_single_goal":
+        maze_layout = U_MAZE_SINGLE_GOAL
     elif maze_layout_name == "u_maze_eval":
         maze_layout = U_MAZE_EVAL
     elif maze_layout_name == "big_maze":
@@ -140,6 +150,7 @@ class HumanoidMaze(PipelineEnv):
         backend='generalized',
         maze_layout_name="u_maze",
         include_goal_in_obs=True,
+        dense_reward:bool=False,
         maze_size_scaling=2.0, # Was 4.0 for antmaze -- just trying to make it tractable
         **kwargs,
     ):
@@ -147,6 +158,7 @@ class HumanoidMaze(PipelineEnv):
         sys = mjcf.loads(xml_string)
         self.possible_starts = possible_starts
         self.possible_goals = possible_goals
+        self.dense_reward = dense_reward
 
         n_frames = 5
 
@@ -265,6 +277,8 @@ class HumanoidMaze(PipelineEnv):
         reward = -distance_to_target + healthy_reward - ctrl_cost
         success = jnp.array(distance_to_target < 0.5, dtype=float)
         success_easy = jnp.array(distance_to_target < 2., dtype=float)
+        if not self.dense_reward:
+            reward = success
         state.metrics.update(
             forward_reward=forward_reward,
             reward_linvel=forward_reward,

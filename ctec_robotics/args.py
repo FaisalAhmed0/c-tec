@@ -18,6 +18,7 @@ class CTEC_args:
     checkpoint: bool = True
     run_name_suffix: str = ""
     num_videos: int = 30
+    task_rwd_scale: float = 0.0
 
     #environment specific arguments
     env_name: str = "ant_hardest_maze"
