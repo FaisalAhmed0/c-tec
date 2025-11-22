@@ -81,6 +81,7 @@ class TrainingState:
     normalizer_params: running_statistics.RunningStatisticsState
     mean_coverage: jnp.ndarray
     contrastive_params_EMA: Params
+    ctec_rwd_scale: jnp .ndarray
 
 
 class Transition(NamedTuple):
@@ -384,7 +385,8 @@ def main(args):
             alpha_params=log_alpha,
             normalizer_params=normalizer_params,
             mean_coverage=jnp.zeros(()),
-            contrastive_params_EMA=contrastive_params
+            contrastive_params_EMA=contrastive_params,
+            ctec_rwd_scale=jnp.array(args.ctec_rwd_scale)
         )
         return jax.device_put_replicated(training_state, jax.local_devices()[:local_devices_to_use])
 
@@ -466,7 +468,23 @@ def main(args):
         updated_ema = jax.tree_util.tree_map(
             lambda x, y: args.ema * x + (1-args.ema) * y, training_state.contrastive_params_EMA, contrastive_params
         )
+
+        # update ctec rwd scale
+        if args.anneal_ctec_rwd:
+            def linear_schedule(t):
+                start_scale = args.ctec_rwd_scale
+                end_scale = 1e-5
+                duration = 150_000_000
+                slope = (end_scale - start_scale) / duration
+                return jnp.array([slope * t + start_scale, jnp.array(end_scale)]).max()
+            # import pdb;pdb.set_trace()
+            # jax.debug.print("raining_state.env_steps {x}", x=training_state.env_steps)
+            new_ctec_rwd_scale = linear_schedule(training_state.env_steps)
+            # jax.debug.print("new_ctec_rwd_scale is {x}", x=new_ctec_rwd_scale)
+        else:
+            new_ctec_rwd_scale = training_state.ctec_rwd_scale
         
+        metrics["ctec_rwd_scale"] = new_ctec_rwd_scale
         new_training_state = TrainingState(
             policy_optimizer_state=policy_optimizer_state,
             policy_params=policy_params,
@@ -481,7 +499,8 @@ def main(args):
             alpha_params=alpha_params,
             normalizer_params=training_state.normalizer_params,
             mean_coverage=training_state.mean_coverage,
-            contrastive_params_EMA=updated_ema
+            contrastive_params_EMA=updated_ema,
+            ctec_rwd_scale=new_ctec_rwd_scale
             
         )
         return (new_training_state, key), metrics
@@ -606,7 +625,7 @@ def main(args):
         )
         crl_rewards = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
         transitions = transitions._replace(
-            reward=crl_rewards + (args.task_rwd_scale * transitions.reward)
+            reward=(training_state.ctec_rwd_scale * crl_rewards) + (args.task_rwd_scale * transitions.reward)
         )
         
 
@@ -753,7 +772,8 @@ def main(args):
         "training/gamma_contrastive_model",
         "training/temperature",
         "training/logits_std",
-        "training/logits_var"
+        "training/logits_var",
+        "training/ctec_rwd_scale"
     ]
 
     

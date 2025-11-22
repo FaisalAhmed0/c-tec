@@ -480,3 +480,5 @@ def incremental_mean_std(data):
     # Use lax.scan to perform the updates over the data stream.
     final_state, (means, stds) = lax.scan(update_rms, init_state, data)
     return means, stds
+
+
