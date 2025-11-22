@@ -196,6 +196,7 @@ class HumanoidMaze(PipelineEnv):
 
         self.state_dim = 268
         self.goal_indices = jnp.array([0, 1, 2])
+        self.single_goal = "single_goal" in maze_layout_name
 
     def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""
@@ -279,6 +280,13 @@ class HumanoidMaze(PipelineEnv):
         success_easy = jnp.array(distance_to_target < 2., dtype=float)
         if not self.dense_reward:
             reward = success
+
+        if self.single_goal:
+            dist = jnp.linalg.norm(obs[:3] - jnp.array([6,2,TARGET_Z_COORD]))
+            success = jnp.array(dist < 0.5, dtype=float)
+            success_easy = jnp.array(dist < 2., dtype=float)
+            reward = success
+
         state.metrics.update(
             forward_reward=forward_reward,
             reward_linvel=forward_reward,
@@ -367,6 +375,7 @@ class HumanoidMaze(PipelineEnv):
     def _random_target(self, rng: jax.Array) -> jax.Array:
         """Returns a random target location chosen from possibilities specified in the maze layout."""
         idx = jax.random.randint(rng, (1,), 0, len(self.possible_goals))
+        # jax.debug.print("goal in single goal humanoid maze: {x}", x=jnp.array(self.possible_goals[idx])[0])
         return jnp.array(self.possible_goals[idx])[0]
 
     def _random_start(self, rng: jax.Array) -> jax.Array:

@@ -15,7 +15,7 @@ class CTEC_args:
     wandb_dir: str = '.'
     wandb_group: str = '.'
     capture_video: bool = False
-    checkpoint: bool = True
+    checkpoint: bool = False
     run_name_suffix: str = ""
     num_videos: int = 30
     task_rwd_scale: float = 0.0
@@ -42,6 +42,9 @@ class CTEC_args:
     tau = 0.005
     logsumexp_penalty_coeff: float = 0.1
     entropy_reg: bool = True
+    fix_alpha: bool = False
+    alpha: float = 0.1
+    use_target_entropy_zero: bool = False
 
     max_replay_size: int = 10000
     min_replay_size: int = 1000
@@ -156,6 +159,8 @@ class APT_args:
     tau = 0.005
     logsumexp_penalty_coeff: float = 0.1
     entropy_reg: bool = True
+    fix_alpha: bool = False
+    alpha: float = 0.1
 
     max_replay_size: int = 10000
     min_replay_size: int = 1000
