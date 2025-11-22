@@ -189,6 +189,7 @@ class AntMaze(PipelineEnv):
         self.possible_starts = possible_starts
         self.possible_goals = possible_goals
         self.include_goal_in_obs = include_goal_in_obs
+        self.single_goal = "single_goal" in maze_layout_name
 
         n_frames = 5
 
@@ -318,6 +319,13 @@ class AntMaze(PipelineEnv):
             reward = 10 * vel_to_target + healthy_reward - ctrl_cost - contact_cost
         else:
             reward = success
+        if self.single_goal:
+            dist = jnp.linalg.norm(obs[:2] - jnp.array([28,40]))
+            success = jnp.array(dist < self.goal_dist, dtype=float)
+            success_easy = jnp.array(dist < 2., dtype=float)
+            reward = success
+
+
 
         done = 1.0 - is_healthy if self._terminate_when_unhealthy else 0.0
 
@@ -358,7 +366,9 @@ class AntMaze(PipelineEnv):
 
     def _random_target(self, rng: jax.Array) -> jax.Array:
         """Returns a random target location chosen from possibilities specified in the maze layout."""
+        
         idx = jax.random.randint(rng, (1,), 0, len(self.possible_goals))
+        # jax.debug.print("goal in single goal ant maze: {x}", x=jnp.array(self.possible_goals[idx])[0])
         return jnp.array(self.possible_goals[idx])[0]
 
     def _random_start(self, rng: jax.Array) -> jax.Array:

@@ -30,7 +30,8 @@ from brax.training.types import Params, Policy
 from brax.training.acme.types import NestedArray
 from brax import envs
 from brax.training import pmap as brax_pmap
-from brax.training.agents.sac import losses as sac_losses
+# from brax.training.agents.sac import losses as sac_losses
+from losses import make_sac_losses
 from brax.training.replay_buffers_test import jit_wrap
 from brax.training import gradients
 from brax.training.types import PRNGKey
@@ -288,8 +289,8 @@ def main(args):
     )
     
     # create losses and update functions
-    alpha_loss, critic_loss, actor_loss = sac_losses.make_losses(
-        sac_network=sac_network, reward_scaling=args.reward_scaling, discounting=args.discounting, action_size=action_size
+    alpha_loss, critic_loss, actor_loss = make_sac_losses(
+        sac_network=sac_network, reward_scaling=args.reward_scaling, discounting=args.discounting, action_size=action_size, zero_target_entropy=args.use_target_entropy_zero
     )
     # contrastive_loss = make_contrastive_loss(contrastive_network)
     alpha_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
@@ -405,7 +406,10 @@ def main(args):
             key_alpha,
             optimizer_state=training_state.alpha_optimizer_state,
         )
-        alpha = jnp.exp(training_state.alpha_params) * args.entropy_reg
+        if args.fix_alpha:
+            alpha = args.alpha
+        else:
+            alpha = jnp.exp(training_state.alpha_params)
         critic_loss, q_params, q_optimizer_state = critic_update(
             training_state.q_params,
             training_state.policy_params,
@@ -450,7 +454,7 @@ def main(args):
             "actor_loss": actor_loss,
             "alpha_loss": alpha_loss,
             "contrastive_loss": contrastive_loss,
-            "alpha": jnp.exp(alpha_params),
+            "alpha": alpha,
             "contrastive_reward_mean": transitions.reward.mean(),
             "contrastive_reward_max": transitions.reward.max(),
             "contrastive_reward_min": transitions.reward.min(),

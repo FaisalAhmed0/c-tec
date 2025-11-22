@@ -14,6 +14,7 @@ run_name_suffix="ctec"
 checkpoint="--no-checkpoint"
 logsumexp_penalty_coeff=0.1
 anneal_ctec_rwd="--anneal_ctec_rwd"
+zero_target_entropy="--no-use_target_entropy_zero"
 
 
 
@@ -68,7 +69,6 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         ${USE_COMPLETE_FUTURE_STATE} \
                                         ${LAYER_NORM} \
                                         ${ENTROPY_REG} \
-                                        ${anneal_ctec_rwd} \
                                         --multiplier_num_sgd_steps=${SGD_STEPS_FACTR} \
                                         --wandb_project_name=\"${WANDB_PROJECT_NAME}\" \
                                         --batch_size=${BATCH_SIZE} \
