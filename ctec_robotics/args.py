@@ -21,6 +21,7 @@ class CTEC_args:
     task_rwd_scale: float = 0.0
     ctec_rwd_scale: float = 1.0
     anneal_ctec_rwd: bool = False
+    use_exp_task_rwd: bool = False
 
     #environment specific arguments
     env_name: str = "ant_hardest_maze"

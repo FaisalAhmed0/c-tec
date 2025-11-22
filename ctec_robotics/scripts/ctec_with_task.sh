@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_with_Task_reward"
+WANDB_PROJECT_NAME="ctec_with_Task_reward_2"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
@@ -13,8 +13,9 @@ ENTROPY_REG="--entropy_reg"
 run_name_suffix="ctec"
 checkpoint="--no-checkpoint"
 logsumexp_penalty_coeff=0.1
-anneal_ctec_rwd="--anneal_ctec_rwd"
+anneal_ctec_rwd="--no-anneal_ctec_rwd"
 zero_target_entropy="--no-use_target_entropy_zero"
+use_exp_task_rwd="--use_exp_task_rwd"
 
 
 
@@ -38,7 +39,7 @@ contrastive_number_hiddenss=(2)
 discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
-TASK_RWD_SCALES=(1 5 10 100)
+TASK_RWD_SCALES=(1)
 
 # Run counter
 run_count=0
@@ -69,6 +70,8 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         ${USE_COMPLETE_FUTURE_STATE} \
                                         ${LAYER_NORM} \
                                         ${ENTROPY_REG} \
+                                        ${anneal_ctec_rwd} \
+                                        ${use_exp_task_rwd} \
                                         --multiplier_num_sgd_steps=${SGD_STEPS_FACTR} \
                                         --wandb_project_name=\"${WANDB_PROJECT_NAME}\" \
                                         --batch_size=${BATCH_SIZE} \

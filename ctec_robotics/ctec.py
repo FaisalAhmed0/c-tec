@@ -628,9 +628,14 @@ def main(args):
             transitions,
         )
         crl_rewards = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
-        transitions = transitions._replace(
-            reward=(training_state.ctec_rwd_scale * crl_rewards) + (args.task_rwd_scale * transitions.reward)
-        )
+        if args.use_exp_task_rwd:
+            transitions = transitions._replace(
+                reward=crl_rewards *  jnp.exp(transitions.reward)
+            )
+        else:
+            transitions = transitions._replace(
+                reward=(training_state.ctec_rwd_scale * crl_rewards) + (args.task_rwd_scale * transitions.reward)
+            )
         
 
         (training_state, _), metrics = jax.lax.scan(sgd_step, (training_state, training_key), transitions)
