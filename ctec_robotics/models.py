@@ -317,7 +317,7 @@ class ForwardDynamics(nn.Module):
     # Based on https://arxiv.org/abs/1507.00814
     def setup(self):
         args = self.args
-        hidden_sizes_forward_model = [args.icm_hidden_dim]*(args.icm_number_hiddens) + [args.obs_dim]
+        hidden_sizes_forward_model = [args.mbrl_hidden_dim]*(args.mbrl_number_hiddens) + [args.obs_dim]
         self.forward_model = MLP(layer_sizes=hidden_sizes_forward_model, layer_norm=args.layer_norm, activation=eval(args.activation))
     def __call__(self, obs, action):
         args = self.args

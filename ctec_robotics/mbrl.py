@@ -16,7 +16,7 @@ import functools
 import model_utils as sac_networks
 import math
 
-from args import ICM_args
+from args import MBRL_args
 from absl import logging
 from jax import lax
 from copy import deepcopy
@@ -887,7 +887,7 @@ def main(args):
 
     
 if __name__ == "__main__":
-    args = tyro.cli(ICM_args)
+    args = tyro.cli(MBRL_args)
     main(args)
 
 
