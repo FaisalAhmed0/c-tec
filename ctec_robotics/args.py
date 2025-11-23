@@ -22,6 +22,8 @@ class CTEC_args:
     ctec_rwd_scale: float = 1.0
     anneal_ctec_rwd: bool = False
     use_exp_task_rwd: bool = False
+    usu_future_rwd: bool = False
+    exp_rwd_temp: float = 0.2
 
     #environment specific arguments
     env_name: str = "ant_hardest_maze"
