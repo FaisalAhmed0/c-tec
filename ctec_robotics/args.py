@@ -23,7 +23,9 @@ class CTEC_args:
     anneal_ctec_rwd: bool = False
     use_exp_task_rwd: bool = False
     usu_future_rwd: bool = False
-    exp_rwd_temp: float = 0.2
+    exp_rwd_temp: float = 0.
+    pre_trainsteps: int = 10_000_000
+    use_crl_task_reward: bool = 0
 
     #environment specific arguments
     env_name: str = "ant_hardest_maze"

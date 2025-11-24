@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_with_future_Task_reward"
+WANDB_PROJECT_NAME="ctec_with_crl_Task_reward"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
@@ -15,19 +15,21 @@ checkpoint="--no-checkpoint"
 logsumexp_penalty_coeff=0.1
 anneal_ctec_rwd="--no-anneal_ctec_rwd"
 zero_target_entropy="--no-use_target_entropy_zero"
-use_exp_task_rwd="--use_exp_task_rwd"
-usu_future_rwd="--usu_future_rwd"
+use_exp_task_rwd="--no-use_exp_task_rwd"
+usu_future_rwd="--no-usu_future_rwd"
 future_rwd_temp=0.1
+use_crl_task_reward="--use_crl_task_reward"
 
 
 
 #### For humanoid_u_maze, use the following values
-ENV_NAMES=("humanoid_u_maze_single_goal")
-BATCH_SIZES=(256)                           
-NUM_ENVS_VALUES=(256)                      
-# ENV_NAMES=("ant_hardest_maze_single_goal" "arm_binpick_hard")
-# BATCH_SIZES=(1024)                           
-# NUM_ENVS_VALUES=(1024)                      
+# ENV_NAMES=("humanoid_u_maze_single_goal")
+# BATCH_SIZES=(256)                           
+# NUM_ENVS_VALUES=(256)                      
+ENV_NAMES=("arm_binpick_hard")
+# ENV_NAMES=("ant_hardest_maze_single_goal")
+BATCH_SIZES=(1024)                           
+NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
 NUM_TIMESTEPS_VALUES=(500000000) 
 NUM_EVALS_VALUES=(2000)                    
@@ -42,6 +44,7 @@ discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
 TASK_RWD_SCALES=(1)
+PRE_TRAINSTEPSS=(10000000 50000000 100000000)
 
 # Run counter
 run_count=0
@@ -64,6 +67,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                             for NUM_TIMESTEPS in "${NUM_TIMESTEPS_VALUES[@]}"; do
                                 for NUM_EVALS in "${NUM_EVALS_VALUES[@]}"; do 
                                 for task_rwd_scale in "${TASK_RWD_SCALES[@]}"; do 
+                                for PRE_TRIANSTEPS in "${PRE_TRAINSTEPSS[@]}"; do 
                                     # Construct the sbatch command
                                     CMD="sbatch scripts/train_ctec ctec.py \
                                         --env_name=${ENV_NAME} \
@@ -75,6 +79,8 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         ${anneal_ctec_rwd} \
                                         ${use_exp_task_rwd} \
                                         ${usu_future_rwd} \
+                                        ${use_crl_task_reward} \
+                                        --pre_trainstep=${PRE_TRIANSTEPS} \
                                         --exp_rwd_temp=${future_rwd_temp} \
                                         --multiplier_num_sgd_steps=${SGD_STEPS_FACTR} \
                                         --wandb_project_name=\"${WANDB_PROJECT_NAME}\" \
@@ -110,6 +116,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
             done
         done
     done
+done
 done
 done
 done

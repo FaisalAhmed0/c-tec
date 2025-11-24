@@ -628,7 +628,16 @@ def main(args):
             transitions,
         )
         crl_rewards = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
-        if args.usu_future_rwd:
+        if args.use_crl_task_reward:
+            # print("here")
+            from intrinsic_rewards import crl_task_reward
+            crl_task_rewards = crl_task_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
+            condition = (training_state.env_steps < args.pre_trainsteps)
+            rewards = crl_rewards**(condition) * crl_task_rewards**(1-condition)
+            transitions = transitions._replace(
+                    reward=rewards
+                )
+        elif args.usu_future_rwd:
             if args.use_exp_task_rwd:
                 transitions = transitions._replace(
                     reward=crl_rewards *  jnp.exp(transitions.extras["future_reward"]/args.exp_rwd_temp)

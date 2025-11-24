@@ -68,7 +68,7 @@ HARDEST_MAZE_SINGLE_GOAL = [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                 [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1],
                 [1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
                 [1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1],
-                [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, G, 1], 
+                [1, 0, 0, 1, 0, 0, 0, 1, 0, G, 0, 1], 
                 [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
 
 
@@ -83,7 +83,7 @@ SPIRAL_MAZE = [
     [1, G, 1, G, 1, 1, 1, 1, G, 1, G, 1], # 7
     [1, G, 1, G, G, G, G, G, G, 1, G, 1], # 8
     [1, G, 1, 1, 1, 1, 1, 1, 1, 1, G, 1], # 9
-    [1, G, G, G, G, G, G, G, G, G, G, 1], # 10 <- Error in manual construction above, fixing path
+    [1, G, G, G, G, G, G, G, G, G, G, 1], # 10
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]  # 11
 ]
 
@@ -320,7 +320,7 @@ class AntMaze(PipelineEnv):
         else:
             reward = success
         if self.single_goal:
-            dist = jnp.linalg.norm(obs[:2] - jnp.array([28,40]))
+            dist = jnp.linalg.norm(obs[:2] - jnp.array([28,36]))
             success = jnp.array(dist < self.goal_dist, dtype=float)
             success_easy = jnp.array(dist < 2., dtype=float)
             reward = success
