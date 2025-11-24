@@ -2,7 +2,7 @@
 
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_baselines"
+WANDB_PROJECT_NAME="ctec_baselines2"
 RENDER_AGENT="--render_agent"
 activation="nn.relu"
 SGD_STEPS_FACTR=1
@@ -14,20 +14,21 @@ rwd_rms="--no-rwd_rms"
 # mbrl_hidden_dim
 # Define parameter arrays (all these can have multiple values)
 #### For humanoid_u_maze, use the following values
-# ENV_NAMES=("humanoid_u_maze")
-# BATCH_SIZES=(256)                           
-# NUM_ENVS_VALUES=(256)                     
-ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
-BATCH_SIZES=(1024)                           
-NUM_ENVS_VALUES=(1024)                      
+ENV_NAMES=("humanoid_u_maze")
+BATCH_SIZES=(256)                           
+NUM_ENVS_VALUES=(256)                     
+# ENV_NAMES=("ant_hardest_maze" "arm_binpick_hard")
+# BATCH_SIZES=(1024)                           
+# NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                   
 NUM_TIMESTEPS_VALUES=(500000000) 
 NUM_EVALS_VALUES=(2000)                    
 runs=(1 2 3 4 5)
 USE_COMPLETE_FUTURE_STATE_VALUES=("--no-use_complete_future_state")
 EPISODE_LENGTHS=(1000)
-MBRL_HIDEEN_DIMS=(256 512 1024)
+MBRL_HIDEEN_DIMS=(1024)
 MBRL_NUM_LAYERS=(2 3)
+LRS=(0.003 0.00003)
 
 # Run counter
 run_count=0
@@ -45,6 +46,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                             for NUM_EVALS in "${NUM_EVALS_VALUES[@]}"; do
                             for MBRL_HIDEEN_DIM in "${MBRL_HIDEEN_DIMS[@]}"; do
                             for MBRL_NUM_LAYER in "${MBRL_NUM_LAYERS[@]}"; do
+                            for LR in "${LRS[@]}"; do
                                 # Construct the sbatch command
                                 CMD="sbatch scripts/train_ctec mbrl.py \
                                     --env_name=${ENV_NAME} \
@@ -57,6 +59,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                     --num_epochs=${NUM_EPOCHS} \
                                     --mbrl_hidden_dim=${MBRL_HIDEEN_DIM} \
                                     --mbrl_number_hiddens=${MBRL_NUM_LAYER} \
+                                    --icm_lr=${icm_lr} \
                                     ${RENDER_AGENT} \
                                     ${rwd_rms} \
                                     --run_name_suffix=${run_name_suffix} \
@@ -74,6 +77,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                 done
             done
         done
+    done
     done
     done
     done
