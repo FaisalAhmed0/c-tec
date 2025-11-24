@@ -45,6 +45,7 @@ LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
 TASK_RWD_SCALES=(1)
 PRE_TRAINSTEPSS=(10000000 50000000 100000000)
+# PRE_TRAINSTEPSS=(50000000  100000000 250000000)
 
 # Run counter
 run_count=0
@@ -80,7 +81,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         ${use_exp_task_rwd} \
                                         ${usu_future_rwd} \
                                         ${use_crl_task_reward} \
-                                        --pre_trainstep=${PRE_TRIANSTEPS} \
+                                        --pre_trainsteps=${PRE_TRIANSTEPS} \
                                         --exp_rwd_temp=${future_rwd_temp} \
                                         --multiplier_num_sgd_steps=${SGD_STEPS_FACTR} \
                                         --wandb_project_name=\"${WANDB_PROJECT_NAME}\" \
