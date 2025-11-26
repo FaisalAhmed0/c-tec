@@ -83,6 +83,7 @@ class TrainingState:
     mean_coverage: jnp.ndarray
     contrastive_params_EMA: Params
     ctec_rwd_scale: jnp .ndarray
+    rms_state: Any
 
 
 class Transition(NamedTuple):
@@ -356,6 +357,8 @@ def main(args):
     contrastive_optimizer: optax.GradientTransformation,
 ) -> TrainingState:
         """Inits the training state and replicates it over devices."""
+        rms_state_shape = ((args.num_envs)//args.batch_size) * (args.episode_length-1)
+        rms_state = (jnp.zeros(rms_state_shape, ), jnp.zeros(rms_state_shape,), jnp.ones((rms_state_shape, )))
         key_policy, key_q, key_contrastive = jax.random.split(key, num=3)
         log_alpha = jnp.asarray(0.0, dtype=jnp.float32)
         alpha_optimizer_state = alpha_optimizer.init(log_alpha)
@@ -387,7 +390,8 @@ def main(args):
             normalizer_params=normalizer_params,
             mean_coverage=jnp.zeros(()),
             contrastive_params_EMA=contrastive_params,
-            ctec_rwd_scale=jnp.array(args.ctec_rwd_scale)
+            ctec_rwd_scale=jnp.array(args.ctec_rwd_scale),
+            rms_state=rms_state
         )
         return jax.device_put_replicated(training_state, jax.local_devices()[:local_devices_to_use])
 
@@ -504,7 +508,8 @@ def main(args):
             normalizer_params=training_state.normalizer_params,
             mean_coverage=training_state.mean_coverage,
             contrastive_params_EMA=updated_ema,
-            ctec_rwd_scale=new_ctec_rwd_scale
+            ctec_rwd_scale=new_ctec_rwd_scale,
+            rms_state=training_state.rms_state
             
         )
         return (new_training_state, key), metrics
@@ -627,18 +632,30 @@ def main(args):
             lambda x: jnp.reshape(x, (-1, args.batch_size) + x.shape[1:]),
             transitions,
         )
-        crl_rewards = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
-        if args.use_crl_task_reward:
-            # print("here")
-            from intrinsic_rewards import crl_task_reward
-            crl_task_rewards = crl_task_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
-            condition = (training_state.env_steps < args.pre_trainsteps)
-            rewards = crl_rewards**(condition) * crl_task_rewards**(1-condition)
-            transitions = transitions._replace(
+        crl_rewards, rms_state = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key, rms_state=training_state.rms_state, rms=args.rwd_rms)
+        training_state = training_state.replace(
+            rms_state=rms_state)
+        # jax.debug.print("reward std is {x}", x=rms_state[-1][0])
+        # jax.debug.print("crl_rewards before scaling is {x}", x=crl_rewards[0][0])
+        # jax.debug.print("crl_rewards after scaling is {x}", x=crl_rewards[0][0]/rms_state[-1][0])
+        # if args.use_crl_task_reward:
+        #     # print("here")
+        #     from intrinsic_rewards import crl_task_reward
+        #     crl_task_rewards = crl_task_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
+        #     condition = (training_state.env_steps < args.pre_trainsteps)
+        #     rewards = crl_rewards**(condition) * crl_task_rewards**(1-condition)
+            # transitions = transitions._replace(
+            #         reward=rewards
+            #     )
+        if args.usu_future_rwd:
+            if args.use_crl_task_reward:
+                from intrinsic_rewards import crl_task_reward
+                crl_task_rewards = crl_task_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
+                rewards = crl_rewards + args.task_rwd_scale * crl_task_rewards
+                transitions = transitions._replace(
                     reward=rewards
                 )
-        elif args.usu_future_rwd:
-            if args.use_exp_task_rwd:
+            elif args.use_exp_task_rwd:
                 transitions = transitions._replace(
                     reward=crl_rewards *  jnp.exp(transitions.extras["future_reward"]/args.exp_rwd_temp)
                 )
@@ -897,6 +914,7 @@ def main(args):
             save_buffer_sample(sample, path, current_step)
         from utils import visualize_ctec_reward
         if epoch in reward_visual_indices and args.visualize_reward:
+            # import pdb;pdb.set_trace()
             scatter_img = visualize_ctec_reward(sample, _unpmap(training_state.contrastive_params), local_key, crl_networks.critic_network, args)
             if args.track:
                 wandb.log({"Reward_visual": wandb.Image(scatter_img)}, step=current_step)

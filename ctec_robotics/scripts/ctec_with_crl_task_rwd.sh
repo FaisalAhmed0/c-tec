@@ -16,7 +16,7 @@ logsumexp_penalty_coeff=0.1
 anneal_ctec_rwd="--no-anneal_ctec_rwd"
 zero_target_entropy="--no-use_target_entropy_zero"
 use_exp_task_rwd="--no-use_exp_task_rwd"
-usu_future_rwd="--no-usu_future_rwd"
+usu_future_rwd="--usu_future_rwd"
 future_rwd_temp=0.1
 use_crl_task_reward="--use_crl_task_reward"
 
@@ -43,8 +43,8 @@ contrastive_number_hiddenss=(2)
 discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
-TASK_RWD_SCALES=(1)
-PRE_TRAINSTEPSS=(10000000 50000000 100000000)
+TASK_RWD_SCALES=(0.05 0.1 0.25 0.5 1)
+PRE_TRAINSTEPSS=(500000000)
 # PRE_TRAINSTEPSS=(50000000  100000000 250000000)
 
 # Run counter

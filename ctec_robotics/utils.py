@@ -309,7 +309,7 @@ def create_env(args: argparse.Namespace) -> object:
     elif "maze" in env_name:
         if "ant" in env_name: 
             # Possible env_name = {'ant_u_maze', 'ant_big_maze', 'ant_hardest_maze'}
-            env = AntMaze(backend=args.backend or "spring", maze_layout_name=env_name[4:], include_goal_in_obs=args.include_goal_in_obs)
+            env = AntMaze(backend=args.backend or "spring", maze_layout_name=env_name[4:], include_goal_in_obs=args.include_goal_in_obs, dense_reward=args.use_dense_reward)
         elif "humanoid" in env_name:
             # Possible env_name = {'humanoid_u_maze', 'humanoid_big_maze', 'humanoid_hardest_maze'}
             env = HumanoidMaze(backend=args.backend or "spring", maze_layout_name=env_name[9:], include_goal_in_obs=args.include_goal_in_obs)

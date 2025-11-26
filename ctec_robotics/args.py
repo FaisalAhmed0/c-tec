@@ -25,7 +25,7 @@ class CTEC_args:
     usu_future_rwd: bool = False
     exp_rwd_temp: float = 0.
     pre_trainsteps: int = 10_000_000
-    use_crl_task_reward: bool = 0
+    use_crl_task_reward: bool = False
 
     #environment specific arguments
     env_name: str = "ant_hardest_maze"
@@ -124,6 +124,7 @@ class CTEC_args:
     num_reward_visuals: int = 50
     visualize_reward: bool = False
     repetition_factor: int = 1
+    rwd_rms: bool = False
 
 
 

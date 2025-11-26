@@ -178,7 +178,7 @@ class AntMaze(PipelineEnv):
         backend="generalized",
         maze_layout_name="u_maze",
         maze_size_scaling=4.0,
-        dense_reward:bool=False,
+        dense_reward:bool=True,
         include_goal_in_obs=True,
         **kwargs,
     ):
@@ -320,10 +320,15 @@ class AntMaze(PipelineEnv):
         else:
             reward = success
         if self.single_goal:
+            old_dist = jnp.linalg.norm(old_obs[:2] - jnp.array([28,36]))
             dist = jnp.linalg.norm(obs[:2] - jnp.array([28,36]))
+            vel_to_target = (old_dist - dist) / self.dt
             success = jnp.array(dist < self.goal_dist, dtype=float)
             success_easy = jnp.array(dist < 2., dtype=float)
-            reward = success
+            if self.dense_reward:
+                reward = 10 * vel_to_target + healthy_reward - ctrl_cost - contact_cost
+            else:
+                reward = success
 
 
 

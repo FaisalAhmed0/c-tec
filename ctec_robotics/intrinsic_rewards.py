@@ -7,7 +7,7 @@ from utils import update_rms
 
 Transition = types.Transition
 
-def crl_reward(contrastive_network, contrastive_params, transition: Transition, args, key_critic):
+def crl_reward(contrastive_network, contrastive_params, transition: Transition, args, key_critic, rms_state=None, rms=False):
     state = transition.observation[:, :, :args.obs_dim]
     action = transition.action
     future_state = transition.extras["future_state_for_rwd"]
@@ -32,7 +32,22 @@ def crl_reward(contrastive_network, contrastive_params, transition: Transition, 
         
         sm = similarity_method[args.energy_fn](sa_repr, g_repr)
     reward = -sm
-    return  jax.lax.stop_gradient(reward)
+    new_rms_state = rms_state
+    if rms:
+        def update_rms_scan(state, x_b):
+            # state: tuple of 3 (), x_b: (B,)
+            def body_fn(carry, x_i):
+                return update_rms(carry, x_i)
+            final_state, (means, stds) = jax.lax.scan(body_fn, state, x_b)
+            # Return the last mean and std, with the final updated state
+            return final_state, (means[-1], stds[-1])
+        eps = 1e-8
+        vmap_update = jax.vmap(update_rms_scan, in_axes=(0, 0))
+        new_rms_state, (final_means, final_stds) = vmap_update(rms_state, reward)
+        # jax.debug.print("std final: {x}",x=(final_stds))
+        reward  = reward / (final_stds[:, None] + eps)
+
+    return  jax.lax.stop_gradient(reward), new_rms_state
 
 
 def crl_task_reward(contrastive_network, contrastive_params, transition: Transition, args, key_critic):

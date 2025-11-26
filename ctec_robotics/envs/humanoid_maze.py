@@ -150,7 +150,7 @@ class HumanoidMaze(PipelineEnv):
         backend='generalized',
         maze_layout_name="u_maze",
         include_goal_in_obs=True,
-        dense_reward:bool=False,
+        dense_reward:bool=True,
         maze_size_scaling=2.0, # Was 4.0 for antmaze -- just trying to make it tractable
         **kwargs,
     ):
@@ -283,9 +283,11 @@ class HumanoidMaze(PipelineEnv):
 
         if self.single_goal:
             dist = jnp.linalg.norm(obs[:3] - jnp.array([6,2,TARGET_Z_COORD]))
+            reward = -dist + healthy_reward - ctrl_cost
             success = jnp.array(dist < 0.5, dtype=float)
             success_easy = jnp.array(dist < 2., dtype=float)
-            reward = success
+            if not self.dense_reward:
+                reward = success
 
         state.metrics.update(
             forward_reward=forward_reward,
