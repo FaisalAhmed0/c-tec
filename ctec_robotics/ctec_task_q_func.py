@@ -31,7 +31,7 @@ from brax.training.acme.types import NestedArray
 from brax import envs
 from brax.training import pmap as brax_pmap
 # from brax.training.agents.sac import losses as sac_losses
-from losses import make_sac_losses
+from losses import make_sac_losses_separate_task_critic
 from brax.training.replay_buffers_test import jit_wrap
 from brax.training import gradients
 from brax.training.types import PRNGKey
@@ -72,9 +72,12 @@ class TrainingState:
     policy_params: Params
     q_optimizer_state: optax.OptState
     q_params: Params
+    task_q_optimizer_state: optax.OptState
+    task_q_params: Params
     contrastive_optimizer_state: optax.OptState
     contrastive_params: Params
     target_q_params: Params
+    target_task_q_params: Params
     gradient_steps: jnp.ndarray
     env_steps: jnp.ndarray
     alpha_optimizer_state: optax.OptState
@@ -93,6 +96,7 @@ class Transition(NamedTuple):
     next_observation: NestedArray
     action: NestedArray
     reward: NestedArray
+    task_reward: NestedArray
     discount: NestedArray
     extras: NestedArray = ()  # pytype: disable=annotation-type-mismatch  # jax-ndarray
 
@@ -115,6 +119,7 @@ def actor_step(
         observation=env_state.obs,
         action=actions,
         reward=nstate.reward,
+        task_reward=nstate.reward,
         discount=1 - nstate.done,
         next_observation=nstate.obs,
         extras={"policy_extras": policy_extras, "state_extras": state_extras},
@@ -243,6 +248,8 @@ def main(args):
     policy_optimizer = optax.adam(learning_rate=args.actor_lr)
     q_optimizer = optax.adam(learning_rate=args.critic_lr)
 
+    task_q_optimizer = optax.adam(learning_rate=args.critic_lr)
+
 
     if args.crl_observation_dim > 0:
         args.crl_goal_indices = jnp.arange(args.crl_observation_dim)
@@ -268,6 +275,7 @@ def main(args):
         next_observation=dummy_obs,
         action=dummy_action,
         reward=0.0,
+        task_reward=0.0,
         discount=0.0,
         extras={
             "state_extras": {
@@ -290,7 +298,7 @@ def main(args):
     )
     
     # create losses and update functions
-    alpha_loss, critic_loss, actor_loss = make_sac_losses(
+    alpha_loss, critic_loss, task_critic_loss, actor_loss = make_sac_losses_separate_task_critic(
         sac_network=sac_network, reward_scaling=args.reward_scaling, discounting=args.discounting, action_size=action_size, zero_target_entropy=args.use_target_entropy_zero
     )
     # contrastive_loss = make_contrastive_loss(contrastive_network)
@@ -300,6 +308,12 @@ def main(args):
     critic_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         critic_loss, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
+
+    task_critic_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
+        task_critic_loss, task_q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
+    )
+
+
     actor_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
@@ -354,6 +368,7 @@ def main(args):
     alpha_optimizer: optax.GradientTransformation,
     policy_optimizer: optax.GradientTransformation,
     q_optimizer: optax.GradientTransformation,
+    task_q_optimizer: optax.GradientTransformation,
     contrastive_optimizer: optax.GradientTransformation,
 ) -> TrainingState:
         """Inits the training state and replicates it over devices."""
@@ -370,6 +385,10 @@ def main(args):
         policy_optimizer_state = policy_optimizer.init(policy_params)
         q_params = sac_network.q_network.init(key_q)
         q_optimizer_state = q_optimizer.init(q_params)
+
+        task_q_params = sac_network.q_network.init(key_q)
+        task_q_optimizer_state = task_q_optimizer.init(q_params)
+
         contrastive_params = contrastive_network.init(key_contrastive, dummy_state, dummy_action, dummy_future_state, key_contrastive, False)
         contrastive_optimizer_state = contrastive_optimizer.init(contrastive_params)
 
@@ -380,9 +399,12 @@ def main(args):
             policy_params=policy_params,
             q_optimizer_state=q_optimizer_state,
             q_params=q_params,
+            task_q_optimizer_state=task_q_optimizer_state,
+            task_q_params=task_q_params,
             contrastive_optimizer_state=contrastive_optimizer_state,
             contrastive_params=contrastive_params,
             target_q_params=q_params,
+            target_task_q_params=task_q_params,
             gradient_steps=jnp.zeros(()),
             env_steps=jnp.zeros(()),
             alpha_optimizer_state=alpha_optimizer_state,
@@ -424,15 +446,29 @@ def main(args):
             key_critic,
             optimizer_state=training_state.q_optimizer_state,
         )
+
+        task_critic_loss, task_q_params, task_q_optimizer_state = task_critic_update(
+            training_state.task_q_params,
+            training_state.policy_params,
+            training_state.normalizer_params,
+            training_state.target_task_q_params,
+            alpha,
+            transitions,
+            key_critic,
+            optimizer_state=training_state.task_q_optimizer_state,
+        )
         
         # 
         actor_loss, policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
             training_state.normalizer_params,
             training_state.q_params,
+            training_state.task_q_params,
             alpha,
             transitions,
             key_actor,
+            args.ctec_rwd_scale,
+            args.task_rwd_scale,
             optimizer_state=training_state.policy_optimizer_state,
         )
 
@@ -453,8 +489,13 @@ def main(args):
             lambda x, y: x * (1 - args.tau) + y * args.tau, training_state.target_q_params, q_params
         )
 
+        new_target_task_q_params = jax.tree_util.tree_map(
+            lambda x, y: x * (1 - args.tau) + y * args.tau, training_state.target_task_q_params,task_q_params
+        )
+
         metrics = {
             "critic_loss": critic_loss,
+            "task_critic_loss": task_critic_loss,
             "actor_loss": actor_loss,
             "alpha_loss": alpha_loss,
             "contrastive_loss": contrastive_loss,
@@ -498,9 +539,12 @@ def main(args):
             policy_params=policy_params,
             q_optimizer_state=q_optimizer_state,
             q_params=q_params,
+            task_q_optimizer_state=task_q_optimizer_state,
+            task_q_params=task_q_params,
             contrastive_optimizer_state=contrastive_optimizer_state,
             contrastive_params=contrastive_params,
             target_q_params=new_target_q_params,
+            target_task_q_params=new_target_task_q_params,
             gradient_steps=training_state.gradient_steps + 1,
             env_steps=training_state.env_steps,
             alpha_optimizer_state=alpha_optimizer_state,
@@ -672,7 +716,8 @@ def main(args):
                 # import pdb;pdb.set_trace()
                 # print(f"args.task_rwd_scale : {args.task_rwd_scale }")
                 transitions = transitions._replace(
-                    reward=(training_state.ctec_rwd_scale * crl_rewards) + (args.task_rwd_scale * transitions.reward)
+                    reward=crl_rewards,
+                    task_reward=transitions.reward
                 )
 
 
@@ -753,6 +798,7 @@ def main(args):
         alpha_optimizer=alpha_optimizer,
         policy_optimizer=policy_optimizer,
         q_optimizer=q_optimizer,
+        task_q_optimizer=task_q_optimizer,
         contrastive_optimizer=contrastive_optimizer
     )
     del global_key
@@ -798,6 +844,7 @@ def main(args):
         "eval/episode_reward_survive",
         "training/actor_loss",
         "training/critic_loss",
+        "training/task_critic_loss",
         "training/contrastive_loss",
         "training/contrastive_reward_mean",
         "training/contrastive_reward_max",

@@ -2,6 +2,7 @@
 import jax.numpy as jnp
 from optax import sigmoid_binary_cross_entropy
 import jax
+from torch.nn import intrinsic
 
 
 
@@ -371,3 +372,156 @@ def make_sac_losses(
     return jnp.mean(actor_loss)
 
   return alpha_loss, critic_loss, actor_loss
+
+
+
+def make_sac_losses_separate_task_critic(
+    sac_network: sac_networks.SACNetworks,
+    reward_scaling: float,
+    discounting: float,
+    action_size: int,
+    zero_target_entropy: bool
+):
+  """Creates the SAC losses."""
+
+  target_entropy = 0.0 if zero_target_entropy else -0.5 * action_size
+  policy_network = sac_network.policy_network
+  q_network = sac_network.q_network
+  parametric_action_distribution = sac_network.parametric_action_distribution
+
+  def alpha_loss(
+      log_alpha: jnp.ndarray,
+      policy_params: Params,
+      normalizer_params: Any,
+      transitions: Transition,
+      key: PRNGKey,
+  ) -> jnp.ndarray:
+    """Eq 18 from https://arxiv.org/pdf/1812.05905.pdf."""
+    dist_params = policy_network.apply(
+        normalizer_params, policy_params, transitions.observation
+    )
+    action = parametric_action_distribution.sample_no_postprocessing(
+        dist_params, key
+    )
+    log_prob = parametric_action_distribution.log_prob(dist_params, action)
+    alpha = jnp.exp(log_alpha)
+    alpha_loss = alpha * jax.lax.stop_gradient(-log_prob - target_entropy)
+    return jnp.mean(alpha_loss)
+
+  def critic_loss(
+      q_params: Params,
+      policy_params: Params,
+      normalizer_params: Any,
+      target_q_params: Params,
+      alpha: jnp.ndarray,
+      transitions: Transition,
+      key: PRNGKey,
+  ) -> jnp.ndarray:
+    q_old_action = q_network.apply(
+        normalizer_params, q_params, transitions.observation, transitions.action
+    )
+    next_dist_params = policy_network.apply(
+        normalizer_params, policy_params, transitions.next_observation
+    )
+    next_action = parametric_action_distribution.sample_no_postprocessing(
+        next_dist_params, key
+    )
+    next_log_prob = parametric_action_distribution.log_prob(
+        next_dist_params, next_action
+    )
+    next_action = parametric_action_distribution.postprocess(next_action)
+    next_q = q_network.apply(
+        normalizer_params,
+        target_q_params,
+        transitions.next_observation,
+        next_action,
+    )
+    next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
+    target_q = jax.lax.stop_gradient(
+        transitions.reward * reward_scaling
+        + transitions.discount * discounting * next_v
+    )
+    q_error = q_old_action - jnp.expand_dims(target_q, -1)
+
+    # Better bootstrapping for truncated episodes.
+    truncation = transitions.extras['state_extras']['truncation']
+    q_error *= jnp.expand_dims(1 - truncation, -1)
+
+    q_loss = 0.5 * jnp.mean(jnp.square(q_error))
+    return q_loss
+
+
+  def task_critic_loss(
+    q_params: Params,
+    policy_params: Params,
+    normalizer_params: Any,
+    target_q_params: Params,
+    alpha: jnp.ndarray,
+    transitions: Transition,
+    key: PRNGKey,
+        ) -> jnp.ndarray:
+    q_old_action = q_network.apply(
+        normalizer_params, q_params, transitions.observation, transitions.action
+    )
+    next_dist_params = policy_network.apply(
+        normalizer_params, policy_params, transitions.next_observation
+    )
+    next_action = parametric_action_distribution.sample_no_postprocessing(
+        next_dist_params, key
+    )
+    next_log_prob = parametric_action_distribution.log_prob(
+        next_dist_params, next_action
+    )
+    next_action = parametric_action_distribution.postprocess(next_action)
+    next_q = q_network.apply(
+        normalizer_params,
+        target_q_params,
+        transitions.next_observation,
+        next_action,
+    )
+    next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
+    target_q = jax.lax.stop_gradient(
+        transitions.task_reward * reward_scaling
+        + transitions.discount * discounting * next_v
+    )
+    q_error = q_old_action - jnp.expand_dims(target_q, -1)
+
+    # Better bootstrapping for truncated episodes.
+    truncation = transitions.extras['state_extras']['truncation']
+    q_error *= jnp.expand_dims(1 - truncation, -1)
+
+    q_loss = 0.5 * jnp.mean(jnp.square(q_error))
+    return q_loss
+
+  def actor_loss(
+      policy_params: Params,
+      normalizer_params: Any,
+      q_params: Params,
+      task_q_params: Params,
+      alpha: jnp.ndarray,
+      transitions: Transition,
+      key: PRNGKey,
+      intr_scale: float,
+      task_scale: float,
+  ) -> jnp.ndarray:
+    dist_params = policy_network.apply(
+        normalizer_params, policy_params, transitions.observation
+    )
+    action = parametric_action_distribution.sample_no_postprocessing(
+        dist_params, key
+    )
+    log_prob = parametric_action_distribution.log_prob(dist_params, action)
+    action = parametric_action_distribution.postprocess(action)
+    intrinsic_q_action = q_network.apply(
+        normalizer_params, q_params, transitions.observation, action
+    )
+    task_q_action = q_network.apply(
+        normalizer_params, task_q_params, transitions.observation, action
+    )
+    min_intrinsic_q = jnp.min(intrinsic_q_action, axis=-1)
+    min_task_q = jnp.min(task_q_action, axis=-1)
+    total_q = (intr_scale * min_intrinsic_q) + (task_scale * min_task_q)
+    actor_loss = alpha * log_prob - total_q
+    return jnp.mean(actor_loss)
+
+  return alpha_loss, critic_loss, task_critic_loss, actor_loss
