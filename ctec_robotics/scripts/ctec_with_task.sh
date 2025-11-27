@@ -43,7 +43,7 @@ discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
 TASK_RWD_SCALES=(1 2 5)
-CTEC_RWD_SCALES=(0.01 0.1 0.5 1)
+CTEC_RWD_SCALES=(0.001)
 
 # Run counter
 run_count=0
