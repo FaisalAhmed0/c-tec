@@ -72,6 +72,17 @@ HARDEST_MAZE_SINGLE_GOAL = [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                 [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
 
 
+
+HARDEST_MAZE_SINGLE_EASY_GOAL = [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, R, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+                [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+                [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+                [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1],
+                [1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
+                [1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1],
+                [1, G, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1], 
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+
 SPIRAL_MAZE = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], # 0
     [1, R, G, G, G, G, G, G, G, G, G, 1], # 1
@@ -123,6 +134,8 @@ def make_maze(maze_layout_name, maze_size_scaling):
         maze_layout = HARDEST_MAZE
     elif maze_layout_name == "hardest_maze_single_goal":
         maze_layout = HARDEST_MAZE_SINGLE_GOAL
+    elif maze_layout_name == "hardest_maze_single_easy_goal":
+        maze_layout = HARDEST_MAZE_SINGLE_EASY_GOAL
     elif maze_layout_name == "spiral_maze":
         maze_layout = SPIRAL_MAZE 
     else:   
@@ -189,7 +202,8 @@ class AntMaze(PipelineEnv):
         self.possible_starts = possible_starts
         self.possible_goals = possible_goals
         self.include_goal_in_obs = include_goal_in_obs
-        self.single_goal = "single_goal" in maze_layout_name
+        self.maze_layout_name = maze_layout_name
+        self.single_goal = "single_goal" in maze_layout_name or "single_easy_goal" in maze_layout_name
 
         n_frames = 5
 
@@ -320,8 +334,12 @@ class AntMaze(PipelineEnv):
         else:
             reward = success
         if self.single_goal:
-            old_dist = jnp.linalg.norm(old_obs[:2] - jnp.array([28,36]))
-            dist = jnp.linalg.norm(obs[:2] - jnp.array([28,36]))
+            if "easy" in self.maze_layout_name:
+                goal = jnp.array([28,4])
+            else:
+                goal = jnp.array([28,36])
+            old_dist = jnp.linalg.norm(old_obs[:2] - goal)
+            dist = jnp.linalg.norm(obs[:2] - goal)
             vel_to_target = (old_dist - dist) / self.dt
             success = jnp.array(dist < self.goal_dist, dtype=float)
             success_easy = jnp.array(dist < 2., dtype=float)

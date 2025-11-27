@@ -669,6 +669,7 @@ def main(args):
                     reward=crl_rewards *  jnp.exp(transitions.reward)
                 )
             else:
+                # import pdb;pdb.set_trace()
                 transitions = transitions._replace(
                     reward=(training_state.ctec_rwd_scale * crl_rewards) + (args.task_rwd_scale * transitions.reward)
                 )

@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_with_Task_reward_negDist"
+WANDB_PROJECT_NAME="ctec_with_task_reward_rms"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
@@ -18,21 +18,21 @@ zero_target_entropy="--no-use_target_entropy_zero"
 use_exp_task_rwd="--no-use_exp_task_rwd"
 usu_future_rwd="--no-usu_future_rwd"
 future_rwd_temp=0.1
-ctec_rwd_scale=0.0
-
+rwd_rms="--rwd_rms"
 
 
 #### For humanoid_u_maze, use the following values
 # ENV_NAMES=("humanoid_u_maze_single_goal")
 # BATCH_SIZES=(256)                           
 # NUM_ENVS_VALUES=(256)                      
-ENV_NAMES=("ant_hardest_maze_single_goal" "arm_binpick_hard")
+# ENV_NAMES=("ant_hardest_maze_single_goal" "arm_binpick_hard")
+ENV_NAMES=("ant_hardest_maze_single_easy_goal")
 BATCH_SIZES=(1024)                           
 NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
 NUM_TIMESTEPS_VALUES=(500000000) 
 NUM_EVALS_VALUES=(2000)                    
-runs=(1 2 3 4 5) # number of seeds, each seed is chosen randomly (results might slightly differ from the paper resutls)
+runs=(1 2 3) # number of seeds, each seed is chosen randomly (results might slightly differ from the paper resutls)
 REPS_DIMS=(64)
 USE_COMPLETE_FUTURE_STATE_VALUES=("--no-use_complete_future_state")
 CONTR_LOSSES=("infonce")
@@ -42,7 +42,8 @@ contrastive_number_hiddenss=(2)
 discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
-TASK_RWD_SCALES=(1)
+TASK_RWD_SCALES=(1 2 5)
+CTEC_RWD_SCALES=(0.01 0.1 0.5 1)
 
 # Run counter
 run_count=0
@@ -65,6 +66,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                             for NUM_TIMESTEPS in "${NUM_TIMESTEPS_VALUES[@]}"; do
                                 for NUM_EVALS in "${NUM_EVALS_VALUES[@]}"; do 
                                 for task_rwd_scale in "${TASK_RWD_SCALES[@]}"; do 
+                                for CTEC_RWD_SCALE in "${CTEC_RWD_SCALES[@]}"; do 
                                     # Construct the sbatch command
                                     CMD="sbatch scripts/train_ctec ctec.py \
                                         --env_name=${ENV_NAME} \
@@ -76,12 +78,13 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         ${anneal_ctec_rwd} \
                                         ${use_exp_task_rwd} \
                                         ${usu_future_rwd} \
+                                        ${rwd_rms} \
                                         --exp_rwd_temp=${future_rwd_temp} \
                                         --multiplier_num_sgd_steps=${SGD_STEPS_FACTR} \
                                         --wandb_project_name=\"${WANDB_PROJECT_NAME}\" \
                                         --batch_size=${BATCH_SIZE} \
                                         --task_rwd_scale=${task_rwd_scale} \
-                                        --ctec_rwd_scale=${ctec_rwd_scale} \
+                                        --ctec_rwd_scale=${CTEC_RWD_SCALE} \
                                         --num_envs=${NUM_ENVS} \
                                         --num_epochs=${NUM_EPOCHS} \
                                         --logsumexp_penalty_coeff=${logsumexp_penalty_coeff} \
@@ -112,6 +115,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
             done
         done
     done
+done
 done
 done
 done
