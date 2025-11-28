@@ -228,16 +228,16 @@ def main(args):
     # Network setup
     network_factory = sac_networks.make_sac_networks
     def pre_process(x,y):
-        if x.ndim > 1:
-            x = x[:, :env.state_dim]
-        else:
-            x = x[:env.state_dim]
+        # if x.ndim > 1:
+        #     x = x[:, :env.state_dim]
+        # else:
+        #     x = x[:env.state_dim]
         return x
     # make sac networks and optimizers
     normalize_fn = lambda x, y: x
     agent_hidden_dims = [args.agent_hidden_dim]*args.agent_number_hiddens
     sac_network = network_factory(
-        observation_size=env.state_dim, action_size=action_size, preprocess_observations_fn=pre_process, layer_norm=args.layer_norm, activation=eval(args.agent_activation), hidden_layer_sizes=agent_hidden_dims
+        observation_size=env.state_dim+env.goal_indices.shape[-1], action_size=action_size, preprocess_observations_fn=pre_process, layer_norm=args.layer_norm, activation=eval(args.agent_activation), hidden_layer_sizes=agent_hidden_dims
     )
     
     # 
@@ -676,6 +676,7 @@ def main(args):
             lambda x: jnp.reshape(x, (-1, args.batch_size) + x.shape[1:]),
             transitions,
         )
+        # jax.debug.print("new rewards in buffer sum: {x}", x=transitions.task_reward.sum())
         crl_rewards, rms_state = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key, rms_state=training_state.rms_state, rms=args.rwd_rms)
         training_state = training_state.replace(
             rms_state=rms_state)

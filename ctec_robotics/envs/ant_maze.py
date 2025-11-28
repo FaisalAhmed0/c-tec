@@ -83,6 +83,27 @@ HARDEST_MAZE_SINGLE_EASY_GOAL = [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
                 [1, G, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1], 
                 [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
 
+
+HARDEST_MAZE_EASY_GOALS = [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, R, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+                [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+                [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+                [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1],
+                [1, G, G, 1, 0, 1, 0, 0, 0, 0, 0, 1],
+                [1, 1, G, 1, 0, 1, 0, 1, 0, 1, 1, 1],
+                [1, G, G, 1, 0, 0, 0, 1, 0, 0, 0, 1], 
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+
+HARDEST_MAZE_HARD_GOALS = [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, R, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+                [1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+                [1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
+                [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1],
+                [1, 0, 0, 1, 0, 1, 0, 0, G, G, G, 1],
+                [1, 1, 0, 1, 0, 1, 0, 1, G, 1, 1, 1],
+                [1, 0, 0, 1, 0, 0, 0, 1, G, G, G, 1], 
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+
 SPIRAL_MAZE = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], # 0
     [1, R, G, G, G, G, G, G, G, G, G, 1], # 1
@@ -136,6 +157,10 @@ def make_maze(maze_layout_name, maze_size_scaling):
         maze_layout = HARDEST_MAZE_SINGLE_GOAL
     elif maze_layout_name == "hardest_maze_single_easy_goal":
         maze_layout = HARDEST_MAZE_SINGLE_EASY_GOAL
+    elif maze_layout_name == "hardest_maze_easy_goals":
+        maze_layout = HARDEST_MAZE_EASY_GOALS
+    elif maze_layout_name == "hardest_maze_hard_goals":
+        maze_layout = HARDEST_MAZE_HARD_GOALS
     elif maze_layout_name == "spiral_maze":
         maze_layout = SPIRAL_MAZE 
     else:   

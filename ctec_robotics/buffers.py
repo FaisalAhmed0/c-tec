@@ -346,3 +346,150 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
             discount=jnp.squeeze(transition.discount[:-1]),
             extras=extras,
         )
+
+    
+### Trajectories Buffer    
+class TrajectoryUniformSamplingQueueWithHer(QueueBase[Sample], Generic[Sample]):
+    """Implements an uniform sampling limited-size replay queue BUT WITH TRAJECTORIES."""
+
+    def sample_internal(self, buffer_state: ReplayBufferState) -> Tuple[ReplayBufferState, Sample]:
+        if buffer_state.data.shape != self._data_shape:
+            raise ValueError(
+                f"Data shape expected by the replay buffer ({self._data_shape}) does "
+                f"not match the shape of the buffer state ({buffer_state.data.shape})"
+            )
+        key, sample_key, shuffle_key = jax.random.split(buffer_state.key, 3)
+        # NOTE: this is the number of envs to sample but it can be modified if there is OOM
+        shape = self.num_envs
+
+        # Sampling envs idxs
+        envs_idxs = jax.random.choice(sample_key, jnp.arange(self.num_envs), shape=(shape,), replace=False)
+
+        @functools.partial(jax.jit, static_argnames=("rows", "cols"))
+        def create_matrix(rows, cols, min_val, max_val, rng_key):
+            rng_key, subkey = jax.random.split(rng_key)
+            start_values = jax.random.randint(subkey, shape=(rows,), minval=min_val, maxval=max_val)
+            row_indices = jnp.arange(cols)
+            matrix = start_values[:, jnp.newaxis] + row_indices
+            return matrix
+
+        @jax.jit
+        def create_batch(arr_2d, indices):
+            return jnp.take(arr_2d, indices, axis=0, mode="wrap")
+
+        create_batch_vmaped = jax.vmap(create_batch, in_axes=(1, 0))
+
+        matrix = create_matrix(
+            shape,
+            self.episode_length,
+            buffer_state.sample_position,
+            buffer_state.insert_position - self.episode_length,
+            sample_key,
+        )
+
+        batch = create_batch_vmaped(buffer_state.data[:, envs_idxs, :], matrix)
+        transitions = self._unflatten_fn(batch)
+        return buffer_state.replace(key=key), transitions
+
+    @staticmethod
+    @functools.partial(jax.jit, static_argnames=["config", "env", "apply_fn"])
+    def flatten_crl_fn(config, env, transition, sample_key: PRNGKey, goal_indicies, contrastive_params, apply_fn):
+        goal_key, transition_key = jax.random.split(sample_key)
+        
+        # Because it's vmaped transition obs.shape is of shape (transitions,obs_dim)
+        seq_len = transition.observation.shape[0]
+        arrangement = jnp.arange(seq_len)
+        is_future_mask = jnp.array(arrangement[:, None] < arrangement[None], dtype=jnp.float32)
+        discount = config.discounting_cl ** jnp.array(arrangement[None] - arrangement[:, None], dtype=jnp.float32)
+
+        # Sample goal indices for computing the contrastive reward
+        if config.future_state_rwd_sampling == "geometric":
+            print("sample from the geometric distribution")
+            probs_for_rwd = is_future_mask * discount 
+        elif config.future_state_rwd_sampling == "uniform":
+            print("sample from the uniform distribution")
+            discount = 1 ** jnp.array(arrangement[None] - arrangement[:, None], dtype=jnp.float32)
+            probs_for_rwd = is_future_mask * discount
+        elif config.future_state_rwd_sampling == "inv_geometric":
+            print("sample from inverse geometric")
+            probs_for_rwd = is_future_mask * discount
+            probs_for_rwd = jnp.flip(probs_for_rwd, axis=-1)
+        elif config.future_state_rwd_sampling == "gaussian":
+            print("sample from gaussian distribution")
+            mean = 1.0 / (1.0 - discount)
+            std = 1.0
+            # Generate gaussian probabilities for future states
+            diff = jnp.array(arrangement[None] - arrangement[:, None], dtype=jnp.float32)
+            probs_for_rwd = jnp.exp(-0.5 * ((diff - mean) / std) ** 2)
+            # Only consider future states and normalize
+            probs_for_rwd = probs_for_rwd * is_future_mask
+        elif "sim_score" in config.future_state_rwd_sampling:
+            '''
+            # 1. take the future states and convert them to goals
+            # 2. get the state and goal representations
+            # 3. compute the score
+            '''
+            future_state = transition.observation
+            future_state_goal = future_state[:, goal_indicies]
+            state_rep, goal_rep, _ = apply_fn(contrastive_params, transition.observation[:, :env.state_dim], transition.action, future_state_goal, sample_key, args.da, train=False)
+            score = -jnp.sum(jnp.abs(state_rep[:, None, :] - goal_rep[None, :, :]), axis=-1)
+            score = score * is_future_mask
+            # sample accotding to the negative similarity score
+            if "neg" in config.future_state_rwd_sampling:
+                probs_for_rwd = jax.lax.stop_gradient(jnp.exp(-score))
+            elif "pos" in config.future_state_rwd_sampling:
+                probs_for_rwd = jax.lax.stop_gradient(jnp.exp(score))
+            
+        # sample goals for training the contrastive model
+        probs = is_future_mask * discount
+        
+        single_trajectories = jnp.concatenate([transition.extras["state_extras"]["seed"][:, jnp.newaxis].T] * seq_len, axis=0)
+        probs_for_rwd = probs_for_rwd * jnp.equal(single_trajectories, single_trajectories.T) + jnp.eye(seq_len) * 1e-5
+        probs = probs * jnp.equal(single_trajectories, single_trajectories.T) + jnp.eye(seq_len) * 1e-5
+
+        goal_index = jax.random.categorical(goal_key, jnp.log(probs))
+        future_state = jnp.take(transition.observation, goal_index[:-1], axis=0)
+        future_action = jnp.take(transition.action, goal_index[:-1], axis=0)
+        
+        goal = future_state[:, goal_indicies]
+        future_state = future_state[:, :env.state_dim]
+        state = transition.observation[:-1, :env.state_dim]
+        new_obs = jnp.concatenate([state, goal], axis=1)
+        future_reward = jnp.take(transition.reward, goal_index[:-1], axis=0)
+
+        rwd_goal_index = jax.random.categorical(goal_key, jnp.log(probs_for_rwd))
+        future_state_for_rwd = jnp.take(transition.observation, rwd_goal_index[:-1], axis=0)
+
+        
+
+        next_state = transition.next_observation[:-1, :env.state_dim]
+        new_next_obs = jnp.concatenate([next_state, goal], axis=1)
+
+        dist = jnp.linalg.norm(new_obs[:, env.state_dim:] - new_obs[:, env.goal_indices])
+
+        new_reward = jnp.array(dist <0.5, dtype=float)
+
+        
+        extras = {
+            "policy_extras": {},
+            "state_extras": {
+                "truncation": jnp.squeeze(transition.extras["state_extras"]["truncation"][:-1]),
+                "seed": jnp.squeeze(transition.extras["state_extras"]["seed"][:-1]),
+            },
+            "state": state,
+            "her_reward": new_reward,
+            "new_next_obs": new_next_obs,
+            "future_state": future_state,
+            "future_action": future_action,
+            "future_reward": future_reward,
+            "future_state_for_rwd": future_state_for_rwd
+        }
+        return transition._replace(
+            observation=jnp.squeeze(new_obs),
+            next_observation=jnp.squeeze(new_next_obs),
+            action=jnp.squeeze(transition.action[:-1]),
+            reward=jnp.squeeze(transition.reward[:-1]),
+            task_reward=new_reward,
+            discount=jnp.squeeze(transition.discount[:-1]),
+            extras=extras,
+        )
