@@ -392,6 +392,7 @@ class AntMaze(PipelineEnv):
             success=success,
             success_easy=success_easy
         )
+        # import pdb;pdb.set_trace()
         state.info.update(info)
         obs = self._get_obs(pipeline_state, self.include_goal_in_obs)
         return state.replace(

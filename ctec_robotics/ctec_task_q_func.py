@@ -468,7 +468,7 @@ def main(args):
             transitions,
             key_actor,
             args.ctec_rwd_scale,
-            args.task_rwd_scale,
+            # args.task_rwd_scale,
             optimizer_state=training_state.policy_optimizer_state,
         )
 
@@ -870,6 +870,7 @@ def main(args):
         "training/temperature",
         "training/logits_std",
         "training/logits_var",
+        "training/task_reward",
         "training/ctec_rwd_scale"
     ]
 
@@ -934,7 +935,7 @@ def main(args):
         print(f"epcoh: {epoch}")
         if epoch in videos_indices and args.render_agent:
             print("rendering")
-            render(make_policy, _unpmap((training_state.normalizer_params, training_state.policy_params)), eval_env_render, run_dir, args.exp_name, seed=args.seed, timestep=current_step)
+            render(make_policy, _unpmap((training_state.normalizer_params, training_state.policy_params)), eval_env_render, run_dir, args.exp_name, seed=np.random.randint(2**31), timestep=current_step)
 
 
         logging.info("step %s", current_step)

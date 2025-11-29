@@ -487,6 +487,9 @@ def make_sac_losses_separate_task_critic(
     q_error = q_old_action - jnp.expand_dims(target_q, -1)
 
     # Better bootstrapping for truncated episodes.
+    # jax.debug.print("target shape is {x}", x=target_q.shape)
+    # jax.debug.print("output shape is {x}", x=q_old_action.shape)
+    # jax.debug.print("loss shape is {x}", x=q_error.shape)
     truncation = transitions.extras['state_extras']['truncation']
     q_error *= jnp.expand_dims(1 - truncation, -1)
 
@@ -502,7 +505,6 @@ def make_sac_losses_separate_task_critic(
       transitions: Transition,
       key: PRNGKey,
       intr_scale: float,
-      task_scale: float,
   ) -> jnp.ndarray:
     dist_params = policy_network.apply(
         normalizer_params, policy_params, transitions.observation
@@ -520,7 +522,7 @@ def make_sac_losses_separate_task_critic(
     )
     min_intrinsic_q = jnp.min(intrinsic_q_action, axis=-1)
     min_task_q = jnp.min(task_q_action, axis=-1)
-    total_q = (intr_scale * min_intrinsic_q) + (task_scale * min_task_q)
+    total_q = (intr_scale * min_intrinsic_q) + ((1-intr_scale) * min_task_q)
     actor_loss = alpha * log_prob - total_q
     return jnp.mean(actor_loss)
 

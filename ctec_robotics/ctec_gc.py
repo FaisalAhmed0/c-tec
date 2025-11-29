@@ -21,7 +21,7 @@ from absl import logging
 from copy import deepcopy
 from typing import Any, Tuple, TypeVar,Union, NamedTuple, Sequence
 from wandb_osh.hooks import TriggerWandbSyncHook
-from evaluator import ActorCrlEvaluator
+from evaluator import Evaluator
 
 from brax.training.acme import specs
 from brax.training.acme import running_statistics
@@ -42,7 +42,7 @@ from utils import MetricsRecorder, create_env, create_eval_env,\
         knn_average_distance, render, gamma_schedule, \
         load_params, save_params, save_args, save_buffer_sample
 from intrinsic_rewards import crl_reward
-from buffers import TrajectoryUniformSamplingQueue
+from buffers import TrajectoryUniformSamplingQueueWithHer
 from losses import make_contrastive_critic_loss as make_contrastive_loss
 from models import ContrastiveCritic, MonolithicCritic
 from wonderwords import RandomWord
@@ -288,7 +288,7 @@ def main(args):
 
     # create replay buffer
     replay_buffer = jit_wrap(
-        TrajectoryUniformSamplingQueue(
+        TrajectoryUniformSamplingQueueWithHer(
             max_replay_size=args.max_replay_size,
             dummy_data_sample=dummy_transition,
             sample_batch_size=args.batch_size,
@@ -434,6 +434,7 @@ def main(args):
         )
         if args.fix_alpha:
             alpha = args.alpha
+            alpha_loss = jnp.zeros_like(training_state.alpha_params)
         else:
             alpha = jnp.exp(training_state.alpha_params)
         critic_loss, q_params, q_optimizer_state = critic_update(
@@ -468,7 +469,7 @@ def main(args):
             transitions,
             key_actor,
             args.ctec_rwd_scale,
-            args.task_rwd_scale,
+            # args.task_rwd_scale,
             optimizer_state=training_state.policy_optimizer_state,
         )
 
@@ -661,7 +662,7 @@ def main(args):
         batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
         # 
 
-        transitions = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0, None, None, None))(
+        transitions = jax.vmap(TrajectoryUniformSamplingQueueWithHer.flatten_crl_fn, in_axes=(None, None, 0, 0, None, None, None))(
             config, env, transitions, batch_keys, args.crl_goal_indices, training_state.contrastive_params, crl_networks.critic_network.apply
         )
 
@@ -721,9 +722,6 @@ def main(args):
             task_reward=transitions.reward
         )
 
-
-        
-        
 
         (training_state, _), metrics = jax.lax.scan(sgd_step, (training_state, training_key), transitions)
         return training_state, buffer_state, metrics
@@ -812,7 +810,7 @@ def main(args):
     if randomization_fn is not None:
         v_randomization_fn = functools.partial(randomization_fn, rng=jax.random.split(eval_key, num_eval_envs))
 
-    evaluator = ActorCrlEvaluator(
+    evaluator = Evaluator(
         eval_env,
         functools.partial(make_policy, deterministic=args.deterministic_eval),
         num_eval_envs=args.num_eval_envs,
@@ -935,7 +933,7 @@ def main(args):
         print(f"epcoh: {epoch}")
         if epoch in videos_indices and args.render_agent:
             print("rendering")
-            render(make_policy, _unpmap((training_state.normalizer_params, training_state.policy_params)), eval_env_render, run_dir, args.exp_name, seed=args.seed, timestep=current_step)
+            render(make_policy, _unpmap((training_state.normalizer_params, training_state.policy_params)), eval_env_render, run_dir, args.exp_name, seed=np.random.randint(2**31), timestep=current_step)
 
 
         logging.info("step %s", current_step)

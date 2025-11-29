@@ -18,7 +18,7 @@ zero_target_entropy="--no-use_target_entropy_zero"
 use_exp_task_rwd="--no-use_exp_task_rwd"
 usu_future_rwd="--no-usu_future_rwd"
 future_rwd_temp=0.1
-rwd_rms="--rwd_rms"
+rwd_rms="--no-rwd_rms"
 
 
 #### For humanoid_u_maze, use the following values
@@ -26,7 +26,7 @@ rwd_rms="--rwd_rms"
 # BATCH_SIZES=(256)                           
 # NUM_ENVS_VALUES=(256)                      
 # ENV_NAMES=("ant_hardest_maze_single_goal" "arm_binpick_hard")
-ENV_NAMES=("ant_hardest_maze_hard_goals")
+ENV_NAMES=("ant_hardest_maze_easy_goals" "ant_hardest_maze_hard_goals")
 BATCH_SIZES=(1024)                           
 NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
@@ -42,8 +42,8 @@ contrastive_number_hiddenss=(2)
 discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
-TASK_RWD_SCALES=(1 2 5 10)
-CTEC_RWD_SCALES=(1 0.001 0.01 0.1 5 0)
+TASK_RWD_SCALES=(1)
+CTEC_RWD_SCALES=(0 1 0.1 0.01 0.001 0.0001)
 
 # Run counter
 run_count=0
@@ -68,7 +68,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                 for task_rwd_scale in "${TASK_RWD_SCALES[@]}"; do 
                                 for CTEC_RWD_SCALE in "${CTEC_RWD_SCALES[@]}"; do 
                                     # Construct the sbatch command
-                                    CMD="sbatch scripts/train_ctec ctec_task_q_func.py \
+                                    CMD="sbatch scripts/train_ctec ctec_gc.py \
                                         --env_name=${ENV_NAME} \
                                         ${TRACK} \
                                         ${NORMALIZE_REP} \

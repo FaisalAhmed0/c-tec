@@ -39,7 +39,7 @@ class CTEC_args:
     num_timesteps: int = 50_000_000
     num_epochs: int = 500
     num_envs: int = 1024
-    num_eval_envs: int = 5
+    num_eval_envs: int = 128
     actor_lr: float = 3e-4
     critic_lr: float = 3e-4
     alpha_lr: float = 3e-4
