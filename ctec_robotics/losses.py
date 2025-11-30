@@ -499,6 +499,7 @@ def make_sac_losses_separate_task_critic(
       transitions: Transition,
       key: PRNGKey,
       intr_scale: float,
+      task_scale: float
   ) -> jnp.ndarray:
     # import pdb;pdb.set_trace()
     dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
@@ -517,7 +518,7 @@ def make_sac_losses_separate_task_critic(
     )
     min_intrinsic_q = jnp.min(intrinsic_q_action, axis=-1)
     min_task_q = jnp.min(task_q_action, axis=-1)
-    total_q = (intr_scale * min_intrinsic_q) + ((1-intr_scale) * min_task_q)
+    total_q = (intr_scale * min_intrinsic_q) + (task_scale * min_task_q)
     actor_loss = alpha * log_prob - total_q
     return jnp.mean(actor_loss)
 

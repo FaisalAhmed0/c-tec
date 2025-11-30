@@ -479,7 +479,7 @@ def main(args):
             transitions,
             key_actor,
             args.ctec_rwd_scale,
-            # args.task_rwd_scale,
+            args.task_rwd_scale,
             optimizer_state=training_state.policy_optimizer_state,
         )
 

@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc"
+WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc_2"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
@@ -18,7 +18,9 @@ zero_target_entropy="--no-use_target_entropy_zero"
 use_exp_task_rwd="--no-use_exp_task_rwd"
 usu_future_rwd="--no-usu_future_rwd"
 future_rwd_temp=0.1
-rwd_rms="--rwd_rms"
+rwd_rms="--no-rwd_rms"
+fix_alpha="--fix_alpha"
+alpha="--alpha=0.0"
 
 
 #### For humanoid_u_maze, use the following values
@@ -42,7 +44,7 @@ contrastive_number_hiddenss=(2)
 discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
-TASK_RWD_SCALES=(1)
+TASK_RWD_SCALES=(1 0 2 5 10 0.1)
 CTEC_RWD_SCALES=(0 1 0.1 0.01 0.001 0.0001)
 
 # Run counter
@@ -74,6 +76,8 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                         ${NORMALIZE_REP} \
                                         ${USE_COMPLETE_FUTURE_STATE} \
                                         ${LAYER_NORM} \
+                                        ${fix_alpha} \
+                                        ${alpha} \
                                         ${ENTROPY_REG} \
                                         ${anneal_ctec_rwd} \
                                         ${use_exp_task_rwd} \

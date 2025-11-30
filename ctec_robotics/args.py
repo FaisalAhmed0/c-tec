@@ -50,7 +50,7 @@ class CTEC_args:
     logsumexp_penalty_coeff: float = 0.1
     entropy_reg: bool = True
     fix_alpha: bool = False
-    alpha: float = 0.1
+    alpha: float = 0.005
     use_target_entropy_zero: bool = False
 
     max_replay_size: int = 10000
