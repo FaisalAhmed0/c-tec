@@ -387,6 +387,7 @@ def make_sac_losses_separate_task_critic(
   target_entropy = 0.0 if zero_target_entropy else -0.5 * action_size
   policy_network = sac_network.policy_network
   q_network = sac_network.q_network
+  gc_q_network = sac_network.gc_q_network
   parametric_action_distribution = sac_network.parametric_action_distribution
 
   def alpha_loss(
@@ -460,9 +461,7 @@ def make_sac_losses_separate_task_critic(
     transitions: Transition,
     key: PRNGKey,
         ) -> jnp.ndarray:
-    q_old_action = q_network.apply(
-        normalizer_params, q_params, transitions.observation, transitions.action
-    )
+    q_old_action = gc_q_network.apply(normalizer_params, q_params, transitions.observation, transitions.action)
     next_dist_params = policy_network.apply(
         normalizer_params, policy_params, transitions.next_observation
     )
@@ -473,12 +472,7 @@ def make_sac_losses_separate_task_critic(
         next_dist_params, next_action
     )
     next_action = parametric_action_distribution.postprocess(next_action)
-    next_q = q_network.apply(
-        normalizer_params,
-        target_q_params,
-        transitions.next_observation,
-        next_action,
-    )
+    next_q = gc_q_network.apply(normalizer_params,target_q_params,transitions.next_observation,next_action,)
     next_v = jnp.min(next_q, axis=-1) - alpha * next_log_prob
     target_q = jax.lax.stop_gradient(
         transitions.task_reward * reward_scaling
@@ -506,18 +500,19 @@ def make_sac_losses_separate_task_critic(
       key: PRNGKey,
       intr_scale: float,
   ) -> jnp.ndarray:
-    dist_params = policy_network.apply(
-        normalizer_params, policy_params, transitions.observation
-    )
+    # import pdb;pdb.set_trace()
+    dist_params = policy_network.apply(normalizer_params, policy_params, transitions.observation)
     action = parametric_action_distribution.sample_no_postprocessing(
         dist_params, key
     )
     log_prob = parametric_action_distribution.log_prob(dist_params, action)
     action = parametric_action_distribution.postprocess(action)
+    # import pdb;pdb.set_trace()
     intrinsic_q_action = q_network.apply(
         normalizer_params, q_params, transitions.observation, action
     )
-    task_q_action = q_network.apply(
+    # import pdb;pdb.set_trace()
+    task_q_action = gc_q_network.apply(
         normalizer_params, task_q_params, transitions.observation, action
     )
     min_intrinsic_q = jnp.min(intrinsic_q_action, axis=-1)

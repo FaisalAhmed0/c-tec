@@ -18,6 +18,13 @@ class SACNetworks:
   q_network: networks.FeedForwardNetwork
   parametric_action_distribution: distribution.ParametricDistribution
 
+@flax.struct.dataclass
+class SACNetworksGC:
+  policy_network: networks.FeedForwardNetwork
+  q_network: networks.FeedForwardNetwork
+  gc_q_network: networks.FeedForwardNetwork
+  parametric_action_distribution: distribution.ParametricDistribution
+
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
@@ -213,4 +220,51 @@ def make_sac_networks(
   return SACNetworks(
       policy_network=policy_network,
       q_network=q_network,
+      parametric_action_distribution=parametric_action_distribution)
+
+
+
+
+def make_sac_networks_for_gc_task(
+    observation_size: int,
+    q_func_observation_size: int,
+    action_size: int,
+    policy_preprocess_observations_fn: types.PreprocessObservationFn = types
+    .identity_observation_preprocessor,
+    q_func_preprocess_observations_fn: types.PreprocessObservationFn = types
+    .identity_observation_preprocessor,
+    hidden_layer_sizes: Sequence[int] = (256, 256),
+    activation: networks.ActivationFn = linen.relu, 
+    layer_norm=False) -> SACNetworks:
+  """Make SAC networks."""
+  # import pdb;pdb.set_trace()  
+  parametric_action_distribution = distribution.NormalTanhDistribution(
+      event_size=action_size)
+  policy_network = make_policy_network(
+      parametric_action_distribution.param_size,
+      observation_size,
+      preprocess_observations_fn=policy_preprocess_observations_fn,
+      hidden_layer_sizes=hidden_layer_sizes,
+      activation=activation, 
+      layer_norm=layer_norm)
+  q_network = make_q_network(
+      q_func_observation_size,
+      action_size,
+      preprocess_observations_fn=q_func_preprocess_observations_fn,
+      hidden_layer_sizes=hidden_layer_sizes,
+      activation=activation, 
+      layer_norm=layer_norm)
+
+  # import pdb;pdb.set_trace()
+  gc_q_network = make_q_network(
+      observation_size,
+      action_size,
+      preprocess_observations_fn=policy_preprocess_observations_fn,
+      hidden_layer_sizes=hidden_layer_sizes,
+      activation=activation, 
+      layer_norm=layer_norm)
+  return SACNetworksGC(
+      policy_network=policy_network,
+      q_network=q_network,
+      gc_q_network=gc_q_network,
       parametric_action_distribution=parametric_action_distribution)

@@ -18,7 +18,7 @@ zero_target_entropy="--no-use_target_entropy_zero"
 use_exp_task_rwd="--no-use_exp_task_rwd"
 usu_future_rwd="--no-usu_future_rwd"
 future_rwd_temp=0.1
-rwd_rms="--no-rwd_rms"
+rwd_rms="--rwd_rms"
 
 
 #### For humanoid_u_maze, use the following values
