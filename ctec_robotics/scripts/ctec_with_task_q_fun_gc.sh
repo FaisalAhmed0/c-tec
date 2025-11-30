@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc_2"
+WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc_3"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
@@ -19,8 +19,8 @@ use_exp_task_rwd="--no-use_exp_task_rwd"
 usu_future_rwd="--no-usu_future_rwd"
 future_rwd_temp=0.1
 rwd_rms="--no-rwd_rms"
-fix_alpha="--fix_alpha"
-alpha="--alpha=0.0"
+fix_alpha="--no-fix_alpha"
+alpha="--alpha=0.01"
 
 
 #### For humanoid_u_maze, use the following values

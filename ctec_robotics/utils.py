@@ -352,20 +352,27 @@ def render(inf_fun_factory, params, env, exp_dir, exp_name, seed=1, rollout_len=
 
     rollout = []
 
-    rng = jax.random.PRNGKey(seed=seed)
-    state = jit_env_reset(rng=rng)
+
+    master_rng = jax.random.PRNGKey(seed=seed) 
+    
+
+    master_rng, initial_reset_rng = jax.random.split(master_rng)
+    state = jit_env_reset(rng=initial_reset_rng)
 
     for i in range(rollout_len):
         rollout.append(state.pipeline_state)
+        
+        master_rng, act_rng, reset_rng = jax.random.split(master_rng, num=3)
 
-        rng, step_rng = jax.random.split(rng)
-        act_rng, reset_rng = jax.random.split(step_rng)
-
+        # Use act_rng for action selection
         act, _ = jit_inference_fn(state.obs, act_rng)
         state = jit_env_step(state, act)
 
+        # 3. Conditionally use reset_rng. 
+        # Even if not used, the key was split from the master_rng, 
+        # ensuring the key chain remains correct.
         if i % 1000 == 0:
-            state = jit_env_reset(rng=reset_rng)
+            state = jit_env_reset(rng=reset_rng) # Use the dedicated key
 
     url = html.render(env.sys.tree_replace({"opt.timestep": env.dt}), rollout, height=1024)
     with open(os.path.join(exp_dir, f"{exp_name}.html"), "w") as file:

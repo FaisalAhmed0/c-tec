@@ -480,6 +480,8 @@ class TrajectoryUniformSamplingQueueWithHer(QueueBase[Sample], Generic[Sample]):
             "her_reward": new_reward,
             "new_next_obs": new_next_obs,
             "future_state": future_state,
+            "org_observation": transition.observation[:-1],
+            "org_next_observation": transition.next_observation[:-1],
             "future_action": future_action,
             "future_reward": future_reward,
             "future_state_for_rwd": future_state_for_rwd
@@ -489,7 +491,7 @@ class TrajectoryUniformSamplingQueueWithHer(QueueBase[Sample], Generic[Sample]):
             next_observation=jnp.squeeze(new_next_obs),
             action=jnp.squeeze(transition.action[:-1]),
             reward=jnp.squeeze(transition.reward[:-1]),
-            task_reward=new_reward,
+            task_reward=jnp.squeeze(transition.reward[:-1]),
             discount=jnp.squeeze(transition.discount[:-1]),
             extras=extras,
         )
