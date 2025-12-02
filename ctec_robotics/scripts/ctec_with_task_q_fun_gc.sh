@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc_3"
+WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc_4"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
@@ -13,7 +13,7 @@ ENTROPY_REG="--entropy_reg"
 run_name_suffix="ctec"
 checkpoint="--no-checkpoint"
 logsumexp_penalty_coeff=0.1
-anneal_ctec_rwd="--no-anneal_ctec_rwd"
+anneal_ctec_rwd="--anneal_ctec_rwd"
 zero_target_entropy="--no-use_target_entropy_zero"
 use_exp_task_rwd="--no-use_exp_task_rwd"
 usu_future_rwd="--no-usu_future_rwd"
@@ -28,7 +28,7 @@ alpha="--alpha=0.01"
 # BATCH_SIZES=(256)                           
 # NUM_ENVS_VALUES=(256)                      
 # ENV_NAMES=("ant_hardest_maze_single_goal" "arm_binpick_hard")
-ENV_NAMES=("ant_hardest_maze_easy_goals" "ant_hardest_maze_hard_goals")
+ENV_NAMES=("ant_hardest_maze_hard_goals")
 BATCH_SIZES=(1024)                           
 NUM_ENVS_VALUES=(1024)                      
 NUM_EPOCHS_VALUES=(1000)                    
@@ -44,8 +44,11 @@ contrastive_number_hiddenss=(2)
 discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
-TASK_RWD_SCALES=(1 0 2 5 10 0.1)
-CTEC_RWD_SCALES=(0 1 0.1 0.01 0.001 0.0001)
+TASK_RWD_SCALES=(1 2 5 0.1)
+CTEC_RWD_SCALES=(2 1 0.1 0.01 0.001 0.0001)
+ANNEAL_RATIO_VALUES=(0.15 0.25 0.5)
+# TASK_RWD_SCALES=(1)
+# CTEC_RWD_SCALES=(0)
 
 # Run counter
 run_count=0
@@ -69,8 +72,10 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                 for NUM_EVALS in "${NUM_EVALS_VALUES[@]}"; do 
                                 for task_rwd_scale in "${TASK_RWD_SCALES[@]}"; do 
                                 for CTEC_RWD_SCALE in "${CTEC_RWD_SCALES[@]}"; do 
-                                    # Construct the sbatch command
-                                    CMD="sbatch scripts/train_ctec ctec_gc.py \
+                                    for ANNEAL_RATIO in "${ANNEAL_RATIO_VALUES[@]}"; do
+                                        # Construct the sbatch command
+                                        CMD="sbatch scripts/train_ctec ctec_gc.py \
+                                        --anneal_ratio=${ANNEAL_RATIO} \
                                         --env_name=${ENV_NAME} \
                                         ${TRACK} \
                                         ${NORMALIZE_REP} \
@@ -119,6 +124,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
             done
         done
     done
+done
 done
 done
 done

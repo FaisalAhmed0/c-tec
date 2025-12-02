@@ -5,7 +5,15 @@ import jax
 from torch.nn import intrinsic
 
 
+def mean_layer_grad_norm(grads):
+    # compute L2 norm per leaf (parameter tensor)
+    norms = jax.tree_util.tree_map(lambda g: jnp.linalg.norm(g), grads)
 
+    # extract all norms into a list of scalars
+    norm_list = jax.tree_util.tree_leaves(norms)
+
+    # mean over layers
+    return jnp.mean(jnp.stack(norm_list))
 
 ### Contrastive related losses
 def log_softmax(logits, axis, resubs):
@@ -398,8 +406,9 @@ def make_sac_losses_separate_task_critic(
       key: PRNGKey,
   ) -> jnp.ndarray:
     """Eq 18 from https://arxiv.org/pdf/1812.05905.pdf."""
+    obs = transitions.extras["org_observation"]
     dist_params = policy_network.apply(
-        normalizer_params, policy_params, transitions.observation
+        normalizer_params, policy_params, obs
     )
     action = parametric_action_distribution.sample_no_postprocessing(
         dist_params, key
@@ -523,6 +532,34 @@ def make_sac_losses_separate_task_critic(
     min_task_q = jnp.min(task_q_action, axis=-1)
     total_q = (intr_scale * min_intrinsic_q) + (task_scale * min_task_q)
     actor_loss = alpha * log_prob - total_q
-    return jnp.mean(actor_loss)
+
+    # helper function to compute the gradient norm
+    def mean_q_value(normalizer_params, q_params, obs, action):
+        intrinsic_q_action = q_network.apply(normalizer_params, q_params, obs, action)
+        min_intrinsic_q = jnp.min(intrinsic_q_action, axis=-1)
+        return jnp.mean(min_intrinsic_q)
+    def mean_task_q_value(normalizer_params, task_q_params, obs, action):
+        task_q_action = gc_q_network.apply(normalizer_params, task_q_params, obs, action)
+        min_task_q = jnp.min(task_q_action, axis=-1)
+        return jnp.mean(min_task_q)
+    # compute the gradient norm of the mean q value w.r.t action 
+    q_grad = jax.grad(mean_q_value, argnums=3)(normalizer_params, q_params, obs, action)
+    task_q_grad = jax.grad(mean_task_q_value, argnums=3)(normalizer_params, task_q_params, obs, action)
+    def grad_cosine_similarity(grad1, grad2):
+        """Compute cosine similarity between two gradient PyTrees."""
+        v1 = grad1/jnp.linalg.norm(grad1, axis=-1)[:, None]
+        v2 = grad2/jnp.linalg.norm(grad2, axis=-1)[:, None]
+        dot = jnp.sum(v1 * v2, axis=-1)
+        return jnp.mean(dot)
+    # import pdb;pdb.set_trace()
+    grad_cosine = grad_cosine_similarity(q_grad, task_q_grad)
+    q_grad_norm = q_grad.mean()
+    task_q_grad_norm = task_q_grad.mean()
+    metrics = {
+        "q_grad_norms_cosine_sim": grad_cosine,
+        "q_grad_a_norm": q_grad_norm,
+        "task_q_grad_a_norm": task_q_grad_norm,
+    }
+    return jnp.mean(actor_loss), metrics
 
   return alpha_loss, critic_loss, task_critic_loss, actor_loss

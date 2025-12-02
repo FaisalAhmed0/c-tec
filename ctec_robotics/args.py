@@ -21,6 +21,7 @@ class CTEC_args:
     task_rwd_scale: float = 0.0
     ctec_rwd_scale: float = 1.0
     anneal_ctec_rwd: bool = False
+    anneal_ratio: float = 0.1
     use_exp_task_rwd: bool = False
     usu_future_rwd: bool = False
     exp_rwd_temp: float = 0.

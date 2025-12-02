@@ -64,6 +64,58 @@ Sample = TypeVar("Sample")
 
 
 
+from typing import Callable, Optional
+
+import jax
+import optax
+
+
+def loss_and_pgrad(
+    loss_fn: Callable[..., float],
+    pmap_axis_name: Optional[str],
+    has_aux: bool = False,
+):
+  g = jax.value_and_grad(loss_fn, has_aux=has_aux)
+
+  def h(*args, **kwargs):
+    value, grad = g(*args, **kwargs)
+    return value, jax.lax.pmean(grad, axis_name=pmap_axis_name)
+
+  return g if pmap_axis_name is None else h
+
+
+def gradient_update_fn(
+    loss_fn: Callable[..., float],
+    optimizer: optax.GradientTransformation,
+    pmap_axis_name: Optional[str],
+    has_aux: bool = False,
+):
+  """Wrapper of the loss function that apply gradient updates.
+
+  Args:
+    loss_fn: The loss function.
+    optimizer: The optimizer to apply gradients.
+    pmap_axis_name: If relevant, the name of the pmap axis to synchronize
+      gradients.
+    has_aux: Whether the loss_fn has auxiliary data.
+
+  Returns:
+    A function that takes the same argument as the loss function plus the
+    optimizer state. The output of this function is the loss, the new parameter,
+    and the new optimizer state.
+  """
+  loss_and_pgrad_fn = loss_and_pgrad(
+      loss_fn, pmap_axis_name=pmap_axis_name, has_aux=has_aux
+  )
+
+  def f(*args, optimizer_state):
+    value, grads = loss_and_pgrad_fn(*args)
+    params_update, optimizer_state = optimizer.update(grads, optimizer_state)
+    params = optax.apply_updates(args[0], params_update)
+    return (value, grads), params, optimizer_state
+
+  return f
+
 @flax.struct.dataclass
 class TrainingState:
     """Contains training state for the learner."""
@@ -312,20 +364,20 @@ def main(args):
         sac_network=sac_network, reward_scaling=args.reward_scaling, discounting=args.discounting, action_size=action_size, zero_target_entropy=args.use_target_entropy_zero
     )
     # contrastive_loss = make_contrastive_loss(contrastive_network)
-    alpha_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
+    alpha_update = gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         alpha_loss, alpha_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
-    critic_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
+    critic_update = gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         critic_loss, q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
 
-    task_critic_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
+    task_critic_update = gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
         task_critic_loss, task_q_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
     )
 
 
-    actor_update = gradients.gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
-        actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME
+    actor_update = gradient_update_fn(  # pytype: disable=wrong-arg-types  # jax-ndarray
+        actor_loss, policy_optimizer, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True
     )
     
     crl_networks = CRLNetworks(
@@ -434,7 +486,7 @@ def main(args):
 
         key, key_alpha, key_critic, key_actor = jax.random.split(key, 4)
 
-        alpha_loss, alpha_params, alpha_optimizer_state = alpha_update(
+        (alpha_loss, alpha_grads), alpha_params, alpha_optimizer_state = alpha_update(
             training_state.alpha_params,
             training_state.policy_params,
             training_state.normalizer_params,
@@ -447,7 +499,7 @@ def main(args):
             alpha_loss = jnp.zeros_like(training_state.alpha_params)
         else:
             alpha = jnp.exp(training_state.alpha_params)
-        critic_loss, q_params, q_optimizer_state = critic_update(
+        (critic_loss, critic_grads), q_params, q_optimizer_state = critic_update(
             training_state.q_params,
             training_state.policy_params,
             training_state.normalizer_params,
@@ -458,7 +510,7 @@ def main(args):
             optimizer_state=training_state.q_optimizer_state,
         )
 
-        task_critic_loss, task_q_params, task_q_optimizer_state = task_critic_update(
+        (task_critic_loss, task_critic_grads), task_q_params, task_q_optimizer_state = task_critic_update(
             training_state.task_q_params,
             training_state.policy_params,
             training_state.normalizer_params,
@@ -470,7 +522,7 @@ def main(args):
         )
         
         # 
-        actor_loss, policy_params, policy_optimizer_state = actor_update(
+        ((actor_loss, actor_metrics), actor_grads), policy_params, policy_optimizer_state = actor_update(
             training_state.policy_params,
             training_state.normalizer_params,
             training_state.q_params,
@@ -478,10 +530,26 @@ def main(args):
             alpha,
             transitions,
             key_actor,
-            args.ctec_rwd_scale,
+            training_state.ctec_rwd_scale,
             args.task_rwd_scale,
             optimizer_state=training_state.policy_optimizer_state,
         )
+
+        def mean_layer_grad_norm(grads):
+            # compute L2 norm per leaf (parameter tensor)
+            norms = jax.tree_util.tree_map(lambda g: jnp.linalg.norm(g), grads)
+
+            # extract all norms into a list of scalars
+            norm_list = jax.tree_util.tree_leaves(norms)
+
+            # mean over layers
+            return jnp.mean(jnp.stack(norm_list))
+        
+        alpha_grad_norm = mean_layer_grad_norm(alpha_grads)
+        critic_grad_norm = mean_layer_grad_norm(critic_grads)
+        task_critic_grad_norm = mean_layer_grad_norm(task_critic_grads)
+        actor_grad_norm = mean_layer_grad_norm(actor_grads)
+        
 
         (contrastive_loss, contrastive_metrics), contrastive_params, contrastive_optimizer_state  = contrastive_update(
             training_state.contrastive_params,
@@ -521,8 +589,14 @@ def main(args):
             "actions_mean": actions_mean,
             "actions_std": actions_std,
         }
+        metrics["alpha_grad_norm"] = alpha_grad_norm
+        metrics["critic_grad_norm"] = critic_grad_norm
+        metrics["task_critic_grad_norm"] = task_critic_grad_norm
+        metrics["actor_grad_norm"] = actor_grad_norm
         # import pdb;pdb.set_trace()
         metrics.update(contrastive_metrics)
+        metrics.update(actor_metrics)
+
 
         # update the EMA
         updated_ema = jax.tree_util.tree_map(
@@ -533,8 +607,8 @@ def main(args):
         if args.anneal_ctec_rwd:
             def linear_schedule(t):
                 start_scale = args.ctec_rwd_scale
-                end_scale = 1e-5
-                duration = 150_000_000
+                end_scale = -1
+                duration = (args.anneal_ratio * args.num_timesteps)
                 slope = (end_scale - start_scale) / duration
                 return jnp.array([slope * t + start_scale, jnp.array(end_scale)]).max()
             # import pdb;pdb.set_trace()
@@ -879,7 +953,15 @@ def main(args):
         "training/temperature",
         "training/logits_std",
         "training/logits_var",
-        "training/ctec_rwd_scale"
+        "training/ctec_rwd_scale",
+        "training/alpha_grad_norm",
+        "training/critic_grad_norm",
+        "training/task_critic_grad_norm",
+        "training/actor_grad_norm",
+        "training/q_grad_norms_cosine_sim",
+        "training/q_grad_a_norm",
+        "training/task_q_grad_a_norm",
+        
     ]
 
     
