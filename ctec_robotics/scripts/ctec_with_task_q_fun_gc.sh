@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc_4"
+WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc_5"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
@@ -12,7 +12,7 @@ SGD_STEPS_FACTR=1
 ENTROPY_REG="--entropy_reg"
 run_name_suffix="ctec"
 checkpoint="--no-checkpoint"
-logsumexp_penalty_coeff=0.1
+logsumexp_penalty_coeff=0.0
 anneal_ctec_rwd="--anneal_ctec_rwd"
 zero_target_entropy="--no-use_target_entropy_zero"
 use_exp_task_rwd="--no-use_exp_task_rwd"
@@ -44,8 +44,8 @@ contrastive_number_hiddenss=(2)
 discountings_crl=(0.99)
 LAYER_NORMS=("--no-layer_norm_crl")
 FUTURE_RWD_SAMPLERS=("geometric")
-TASK_RWD_SCALES=(1 2 5 0.1)
-CTEC_RWD_SCALES=(2 1 0.1 0.01 0.001 0.0001)
+TASK_RWD_SCALES=(0.1 2 5 10)
+CTEC_RWD_SCALES=(2 1 0.1 0.01)
 ANNEAL_RATIO_VALUES=(0.15 0.25 0.5)
 # TASK_RWD_SCALES=(1)
 # CTEC_RWD_SCALES=(0)

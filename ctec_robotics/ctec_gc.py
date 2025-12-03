@@ -308,9 +308,14 @@ def main(args):
     alpha_optimizer = optax.adam(learning_rate=args.alpha_lr)
 
     policy_optimizer = optax.adam(learning_rate=args.actor_lr)
-    q_optimizer = optax.adam(learning_rate=args.critic_lr)
+    q_optimizer = optax.chain(
+        optax.clip_by_global_norm(args.max_grad_norm),
+        optax.adam(learning_rate=args.critic_lr)
+        )
 
-    task_q_optimizer = optax.adam(learning_rate=args.critic_lr)
+    task_q_optimizer = optax.chain(
+        optax.clip_by_global_norm(args.max_grad_norm),
+        optax.adam(learning_rate=args.critic_lr))
 
 
     if args.crl_observation_dim > 0:
@@ -327,7 +332,10 @@ def main(args):
         contrastive_network = MonolithicCritic(args)
     else:
         contrastive_network = ContrastiveCritic(args)
-    contrastive_optimizer = optax.adam(learning_rate=args.critic_lr)
+    contrastive_optimizer = optax.chain(
+        optax.clip_by_global_norm(args.max_grad_norm),
+        optax.adam(learning_rate=args.critic_lr)
+    )
     
     # create the transition object
     dummy_obs = jnp.zeros((obs_size,))
@@ -607,7 +615,7 @@ def main(args):
         if args.anneal_ctec_rwd:
             def linear_schedule(t):
                 start_scale = args.ctec_rwd_scale
-                end_scale = -1
+                end_scale = -0.0001
                 duration = (args.anneal_ratio * args.num_timesteps)
                 slope = (end_scale - start_scale) / duration
                 return jnp.array([slope * t + start_scale, jnp.array(end_scale)]).max()

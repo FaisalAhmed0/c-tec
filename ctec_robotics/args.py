@@ -27,6 +27,7 @@ class CTEC_args:
     exp_rwd_temp: float = 0.
     pre_trainsteps: int = 10_000_000
     use_crl_task_reward: bool = False
+    max_grad_norm: float = 1.0
 
     #environment specific arguments
     env_name: str = "ant_hardest_maze"
