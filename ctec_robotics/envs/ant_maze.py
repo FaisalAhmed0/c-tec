@@ -294,6 +294,7 @@ class AntMaze(PipelineEnv):
 
         target = self._random_target(rng3)
         q = q.at[-2:].set(target)
+        # jax.debug.print("target: {x}", x=target)
 
         qd = qd.at[-2:].set(0)
 
@@ -346,9 +347,9 @@ class AntMaze(PipelineEnv):
         ctrl_cost = self._ctrl_cost_weight * jnp.sum(jnp.square(action))
         contact_cost = 0.0
 
-        old_obs = self._get_obs(pipeline_state0)
+        old_obs = self._get_obs(pipeline_state0, self.include_goal_in_obs)
         old_dist = jnp.linalg.norm(old_obs[:2] - old_obs[-2:])
-        obs = self._get_obs(pipeline_state)
+        obs = self._get_obs(pipeline_state, self.include_goal_in_obs)
         dist = jnp.linalg.norm(obs[:2] - obs[-2:])
         vel_to_target = (old_dist - dist) / self.dt
         success = jnp.array(dist < self.goal_dist, dtype=float)

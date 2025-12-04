@@ -58,7 +58,7 @@ class CTEC_args:
     max_replay_size: int = 10000
     min_replay_size: int = 1000
     agent_number_hiddens: int = 2
-    agent_hidden_dim: int = 256
+    agent_hidden_dim: int = 1024
     
     unroll_length: int  = 62
     reward_scaling: float = 1.0

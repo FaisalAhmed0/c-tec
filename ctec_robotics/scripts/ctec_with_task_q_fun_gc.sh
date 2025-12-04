@@ -2,7 +2,7 @@
 #!/bin/bash
 # Define common parameters (fixed values)
 TRACK="--track"
-WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc_5"
+WANDB_PROJECT_NAME="ctec_with_task_q_fucn_gc_bigger_model"
 RENDER_AGENT="--render_agent"
 contrastive_hidden_dim=1024
 activation="nn.relu"
