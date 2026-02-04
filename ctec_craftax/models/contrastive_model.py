@@ -42,20 +42,20 @@ class ScannedRNN(nn.Module):
         return cell.initialize_carry(jax.random.PRNGKey(0), (batch_size, hidden_size))
 
 
-def residual_block(x, width, normalize, activation):
+def residual_block(x, width):
     identity = x
     x = nn.Dense(width, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
-    x = normalize(x)
-    x = activation(x)
+    x = nn.LayerNorm()(x)
+    x = nn.swish(x)
     x = nn.Dense(width, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
-    x = normalize(x)
-    x = activation(x)
+    x = nn.LayerNorm()(x)
+    x = nn.swish(x)
     x = nn.Dense(width, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
-    x = normalize(x)
-    x = activation(x)
+    x = nn.LayerNorm()(x)
+    x = nn.swish(x)
     x = nn.Dense(width, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
-    x = normalize(x)
-    x = activation(x)
+    x = nn.LayerNorm()(x)
+    x = nn.swish(x)
     x = x + identity
     return x
 
@@ -132,14 +132,7 @@ class SA_encoder_deep(nn.Module):
         lecun_unfirom = variance_scaling(1/3, "fan_in", "uniform")
         bias_init = nn.initializers.zeros
 
-        if config["USE_LAYER_NROM"]:
-            normalize = lambda x: nn.LayerNorm()(x)
-        else:
-            normalize = lambda x: x
         
-        activation = eval(config["ACTIVATION_CRL"])
-
-        config = self.config
         if config["USE_ACTION_IN_CL"]:
             x = jnp.concatenate([s, a], axis=-1)
         else:
@@ -148,14 +141,15 @@ class SA_encoder_deep(nn.Module):
         # import pdb;pdb.set_trace()
 
         x = nn.Dense(config["CONTRASTIVE_HIDDEN_DIM"], kernel_init=lecun_unfirom, bias_init=bias_init)(x)
-        x = normalize(x)
-        x = activation(x)
+        x = nn.LayerNorm()(x)
+        x = nn.swish(x)
 
-        for i in range(config["CONTRASTIVE_NUMBER_HIDDENS"] // 4):
-            x = residual_block(x, config["CONTRASTIVE_HIDDEN_DIM"], normalize, activation)
+
+        for i in range(config["N_BLOCKS"]):
+            x = residual_block(x, config["CONTRASTIVE_HIDDEN_DIM"])
 
         #Final layer
-        x = nn.Dense(64, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+        x = nn.Dense(config["REPR_DIM"], kernel_init=lecun_unfirom, bias_init=bias_init)(x)
 
         if config["USE_NORMALIZE_REPR"]:
             x = x / (jnp.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
@@ -188,33 +182,27 @@ class S_encoder_deep(nn.Module):
     config: object
 
     @nn.compact
-    def __call__(self, s , a):
+    def __call__(self, s ):
         config = self.config
 
         lecun_unfirom = variance_scaling(1/3, "fan_in", "uniform")
         bias_init = nn.initializers.zeros
 
-        if config["USE_LAYER_NROM"]:
-            normalize = lambda x: nn.LayerNorm()(x)
-        else:
-            normalize = lambda x: x
-        
-        activation = eval(config["ACTIVATION_CRL"])
 
-        config = self.config
         x = s
         # create the model
         # import pdb;pdb.set_trace()
 
         x = nn.Dense(config["CONTRASTIVE_HIDDEN_DIM"], kernel_init=lecun_unfirom, bias_init=bias_init)(x)
-        x = normalize(x)
-        x = activation(x)
+        x = nn.LayerNorm()(x)
+        x = nn.swish(x)
 
-        for i in range(config["CONTRASTIVE_NUMBER_HIDDENS"] // 4):
-            x = residual_block(x, config["CONTRASTIVE_HIDDEN_DIM"], normalize, activation)
+
+        for i in range(config["N_BLOCKS"]):
+            x = residual_block(x, config["CONTRASTIVE_HIDDEN_DIM"])
 
         #Final layer
-        x = nn.Dense(64, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+        x = nn.Dense(config["REPR_DIM"], kernel_init=lecun_unfirom, bias_init=bias_init)(x)
         
         if config["USE_NORMALIZE_REPR"]:
             x = x / (jnp.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
@@ -261,7 +249,28 @@ class ContrastiveModel(nn.Module):
         future_obs_rep = s_encoder(future_embedding)
 
         return obs_action_rep, future_obs_rep, sa_encoder.log_temperature, hidden_state
-    
+
+
+class ContrastiveModelResidual(nn.Module):
+    config: object
+
+    # def setup(self):
+    #     config = self.config
+    #     # setup the state encoder, forward model and backward model
+    #     self.obs_action_encoder = SA_encoder(config)
+    #     self.future_obs_encoder = S_encoder(config)
+
+    @nn.compact
+    def __call__(self, obs, action, future_obs, dones, hidden_state):
+        config = self.config
+        # update the mean and the std of the observations
+        sa_encoder = SA_encoder_deep(config)
+        s_encoder = S_encoder_deep(config)
+        obs_action_rep = sa_encoder(obs, action)
+        future_obs_rep = s_encoder(future_obs)
+
+        return obs_action_rep, future_obs_rep, sa_encoder.log_temperature, hidden_state
+
 
 class EmpowermentModel(nn.Module):
     config: object

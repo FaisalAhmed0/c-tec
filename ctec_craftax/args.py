@@ -292,6 +292,8 @@ def ctec_rnn_args(sys):
     parser.add_argument("--optimistic_reset_ratio", type=int, default=16)
     # Contrastive
     
+    parser.add_argument("--use_residual_blocks", type=int, default=0)
+    parser.add_argument("--n_blocks", type=int, default=4)
     parser.add_argument("--contrastive_hidden_dim", type=int, default=1024)
     parser.add_argument("--contrastive_number_hiddens", type=int, default=3)
     parser.add_argument("--embed_obs", type=int, default=0)

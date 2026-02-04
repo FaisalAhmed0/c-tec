@@ -43,7 +43,7 @@ from wrappers import (
 from logz.batch_logging import create_log_dict, batch_log
 
 from craftax.craftax_env import make_craftax_env_from_name
-from models.contrastive_model import ContrastiveModel, EmpowermentModel
+from models.contrastive_model import ContrastiveModel, EmpowermentModel, ContrastiveModelResidual
 from losses import contrastive_losses
 from wonderwords import RandomWord
 ### imports for the atari environments from envpool
@@ -303,8 +303,11 @@ def make_train(config):
             params=network_params,
             tx=tx,
         )
-
-        contrastive_network = ContrastiveModel(config)
+        if config["USE_RESIDUAL_BLOCKS"]:
+            # import pdb;pdb.set_trace()
+            contrastive_network =  ContrastiveModelResidual(config)
+        else:
+            contrastive_network = ContrastiveModel(config)
         if config["USE_EMPOWERMENT"]:
             emp_network = EmpowermentModel(config)
         
