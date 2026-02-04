@@ -20,7 +20,7 @@ from orbax.checkpoint import (
 import orbax.checkpoint as ocp
 
 from models.actor_critic import ActorCriticConv, ActorCritic
-from models.contrastive_model import ContrastiveModel, EmpowermentModel
+from models.contrastive_model import ContrastiveModel, EmpowermentModel, ContrastiveModelResidual
 from craftax.craftax_classic.renderer import render_craftax_pixels
 import imageio
 import jax.lax as lax
@@ -386,7 +386,10 @@ def visualize_agent_rnn(path, config=None, args=None, log_to_wandb=False):
         int(config["TOTAL_TIMESTEPS"]), items=train_state
     )
 
-    contrastive_network = ContrastiveModel(config)
+    if config["USE_RESIDUAL_BLOCKS"]:
+        contrastive_network =  ContrastiveModelResidual(config)
+    else:
+        contrastive_network = ContrastiveModel(config)
     obs_shape = env.observation_space(env_params).shape[0]
     action_shape = env.action_space(env_params).n
     dummy_obs = jnp.zeros((1, obs_shape))

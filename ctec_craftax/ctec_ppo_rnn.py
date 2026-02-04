@@ -241,8 +241,8 @@ def make_train(config):
 
         # Ensure the last step is terminal.
         dones = dones.at[-1].set(1)
-        # future_obs = jnp.zeros_like(obs)
-        future_obs = jnp.zeros(shape=(obs.shape[0], obs.shape[1] + 1))  # The plus is for the indext of the time steps
+        future_obs = jnp.zeros_like(obs)
+        # future_obs = jnp.zeros(shape=(obs.shape[0], obs.shape[1]))  # The plus is for the indext of the time steps
         all_indices = jnp.arange(max_steps)
         rngs = jax.random.split(rng, max_steps)
 
@@ -269,8 +269,10 @@ def make_train(config):
             future_timestep = jax.random.choice(rngs[0], all_indices, p=probs, shape=())
 
             # Set the future observation for time i.
-            future_obs_with_inds = jnp.concatenate([obs[future_timestep],future_timestep[None] ], axis=-1)
-            future_obs = future_obs.at[i].set(future_obs_with_inds)
+            # future_obs_with_inds = jnp.concatenate([obs[future_timestep],future_timestep[None] ], axis=-1)
+            # future_obs = obs[future_timestep]
+            future_obs = future_obs.at[i].set(obs[future_timestep])
+
         
         return future_obs
 
@@ -305,6 +307,7 @@ def make_train(config):
         )
         if config["USE_RESIDUAL_BLOCKS"]:
             # import pdb;pdb.set_trace()
+            print("Use contrastive model with residual blocks")
             contrastive_network =  ContrastiveModelResidual(config)
         else:
             contrastive_network = ContrastiveModel(config)
@@ -573,7 +576,7 @@ def make_train(config):
                             obs_in = traj_batch.obs.reshape(-1, obs_shape)
                             action_in = action_onehot.reshape(-1, action_shape)
                             dones_in = traj_batch.done.reshape(-1, 1)
-                            future_obs = future_obs.reshape(-1, obs_shape+1)[:, :-1]
+                            future_obs = future_obs.reshape(-1, obs_shape)
                             # jax.debug.print("future_obs: {x}",x=future_obs[..., -1])
 
 
@@ -763,6 +766,7 @@ def make_train(config):
                         csv_logger.log(agg_logs)    
 
                 def _save_network(training_state, crl_state, update_step):
+                    # import pdb;pdb.set_trace()
                     if (update_step+1) % config["VIDEO_LOG_FREQ"] == 0:
                         dir_name="policies"
                         base_path = config["CHECKPOINT_DIR"]
