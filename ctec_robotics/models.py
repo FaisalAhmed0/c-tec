@@ -13,7 +13,24 @@ lecun_unfirom = variance_scaling(1/3, "fan_in", "uniform")
 bias_init = nn.initializers.zeros
 
 ## Contrastive models
+def residual_block(x, width):
+    identity = x
+    x = nn.Dense(width, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+    x = nn.LayerNorm()(x)
+    x = nn.swish(x)
+    x = nn.Dense(width, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+    x = nn.LayerNorm()(x)
+    x = nn.swish(x)
+    x = nn.Dense(width, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+    x = nn.LayerNorm()(x)
+    x = nn.swish(x)
+    x = nn.Dense(width, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+    x = nn.LayerNorm()(x)
+    x = nn.swish(x)
+    x = x + identity
+    return x
 
+    
 class CRL_MLP(nn.Module):
     '''
     An MLP for the contrastive encoders
@@ -50,6 +67,64 @@ class CRL_MLP(nn.Module):
                 hidden = self.activation(hidden)
         return hidden
     
+
+
+class SA_residual_encoder(nn.Module):
+    '''
+    State action encoder
+    '''
+    args: object
+
+    def setup(self):
+        # Initialize the temperature parameter (starting with 1.0, can be adjusted)
+        args = self.args
+        if args.fix_temp:
+            self.log_temperature = jnp.ones(()) * jnp.log(args.temp_value)
+        else:
+            self.log_temperature = self.param('temperature', lambda key: jnp.zeros(()))
+
+    @nn.compact
+    def __call__(self, s , a, key, augment=False, train=False):
+        args = self.args
+        x = jnp.concatenate([s, a], axis=-1)
+        x = nn.Dense(args.contrastive_hidden_dim, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+        x = nn.LayerNorm()(x)
+        x = nn.swish(x)
+        
+        for i in range(args.n_blocks):
+            x = residual_block(x, args.contrastive_hidden_dim)
+        # if enabled, normalize the representations
+        x = nn.Dense(args.repr_dim, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+
+        if args.normalize_repr:
+            x = x / (jnp.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
+            # jax.debug.print("temperature value is {x}",x=jnp.exp(self.log_temperature))
+            x = x / jnp.exp(self.log_temperature)
+        return x
+
+
+class G_residual_encoder(nn.Module):
+    '''
+    Future state or "Goal" encoder
+    '''
+    args: object
+
+    @nn.compact
+    def __call__(self, s, key, augment=False, train=False):
+        args = self.args
+        x = s
+        x = nn.Dense(args.contrastive_hidden_dim, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+        x = nn.LayerNorm()(x)
+        x = nn.swish(x)
+        
+        for i in range(args.n_blocks):
+            x = residual_block(x, args.contrastive_hidden_dim)
+        # if enabled, normalize the representations
+        x = nn.Dense(args.repr_dim, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+
+        if args.normalize_repr:
+            x = x / (jnp.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
+        return x
 
 class SA_encoder(nn.Module):
     '''
@@ -134,9 +209,12 @@ class ContrastiveCritic(nn.Module):
 
     def setup(self):
         args = self.args
-        
-        self.obs_action_encoder = SA_encoder(args)
-        self.future_obs_encoder = G_encoder(args)
+        if args.use_residual_blocks:
+            self.obs_action_encoder = SA_residual_encoder(args)
+            self.future_obs_encoder =  G_residual_encoder(args)
+        else:
+            self.obs_action_encoder = SA_encoder(args)
+            self.future_obs_encoder = G_encoder(args)
 
     def __call__(self, obs, action, future_obs,key, augment=False, train=True):
         # encode the state and action

@@ -399,12 +399,11 @@ def visualize_ctec_reward(transition, contrastive_params, key_critic, contrastiv
         sm = contrastive_network.apply(contrastive_params, state, action, goal, method=contrastive_network.compute_intr_rwd).squeeze()
     else:
         sa_repr, g_repr, _ = contrastive_network.apply(contrastive_params, state, action, goal, key_critic, args.da, train=False)
-
         similarity_method = {
                 "l2": lambda sa_repr, g_repr: -jnp.sqrt(jnp.sum((sa_repr - g_repr) ** 2, axis=-1)),
                 "l2_no_sqrt":  lambda sa_repr, g_repr: -jnp.sum((sa_repr - g_repr) ** 2, axis=-1),
                 "l1":  lambda sa_repr, g_repr: -jnp.sum(jnp.abs(sa_repr - g_repr), axis=-1),
-                "dot": lambda sa_repr, g_repr: jnp.einsum("hik,hik->hi", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
+                "dot": lambda sa_repr, g_repr: jnp.einsum("hk,hk->h", sa_repr, g_repr), # if the vectors are normalized then this the cosine 
             }
         
         sm = similarity_method[args.energy_fn](sa_repr, g_repr)

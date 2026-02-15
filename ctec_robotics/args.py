@@ -58,7 +58,7 @@ class CTEC_args:
     max_replay_size: int = 10000
     min_replay_size: int = 1000
     agent_number_hiddens: int = 2
-    agent_hidden_dim: int = 1024
+    agent_hidden_dim: int = 512
     
     unroll_length: int  = 62
     reward_scaling: float = 1.0
@@ -127,6 +127,8 @@ class CTEC_args:
     visualize_reward: bool = False
     repetition_factor: int = 1
     rwd_rms: bool = False
+    use_residual_blocks: bool = False
+    n_blocks: int = 4
 
 
 
