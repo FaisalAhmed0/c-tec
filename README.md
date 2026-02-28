@@ -1,4 +1,4 @@
-# Curiosity-Driven Exploration via Temporal Contrastive Learning 
+# Temporal Representations for Exploration: Learning Complex Exploratory Behavior without Extrinsic Rewards
 
 
 ## Abstract
