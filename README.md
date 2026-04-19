@@ -102,6 +102,14 @@ bash scripts/icm.sh     # ICM
 ---
 
 ## Citation
-
-If you use this repository or the associated methods in published work, please cite the paper once the venue assigns DOI or BibTeX metadata.
+```
+@inproceedings{
+        mohamed2026temporal,
+        title={Temporal Representations for Exploration: Learning Complex Exploratory Behavior without Extrinsic Rewards},
+        author={Faisal Mohamed and Catherine Ji and Benjamin Eysenbach and Glen Berseth},
+        booktitle={The Fourteenth International Conference on Learning Representations},
+        year={2026},
+        url={https://openreview.net/forum?id=KjYpHySlb0}
+        }
+```
 
