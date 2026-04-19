@@ -89,8 +89,6 @@ bash ctec_craftax/scripts/rnd_craftax.sh
 
 ## Citation
 
-If you use this code or method, please cite the paper. Replace `author`, `year`, and `note` with the published venue and identifier when available:
-
 ```bibtex
 @inproceedings{
         mohamed2026temporal,
