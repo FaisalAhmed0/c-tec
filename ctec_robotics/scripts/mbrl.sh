@@ -48,7 +48,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                             for MBRL_NUM_LAYER in "${MBRL_NUM_LAYERS[@]}"; do
                             for LR in "${LRS[@]}"; do
                                 # Construct the sbatch command
-                                CMD="sbatch scripts/train_ctec mbrl.py \
+                                CMD="python mbrl.py \
                                     --env_name=${ENV_NAME} \
                                     ${TRACK} \
                                     ${USE_COMPLETE_FUTURE_STATE} \

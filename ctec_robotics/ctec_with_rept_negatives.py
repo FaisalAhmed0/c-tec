@@ -41,7 +41,7 @@ from utils import MetricsRecorder, create_env, create_eval_env,\
         knn_average_distance, render, gamma_schedule, \
         load_params, save_params, save_args, save_buffer_sample
 from intrinsic_rewards import crl_reward
-from buffers_editing import TrajectoryUniformSamplingQueue
+from buffers_with_repetition_factor import TrajectoryUniformSamplingQueue
 from losses import make_contrastive_critic_loss as make_contrastive_loss
 from models import ContrastiveCritic, MonolithicCritic
 from wonderwords import RandomWord
@@ -142,8 +142,8 @@ def main(args):
     print(f"Number of training steps per epoch: {args.num_training_steps_per_epoch}")
     print(f"env_to_sgd_steps ratio={1/sgd_to_env}:1")
 
-    scratch_path = os.getenv("SCRATCH")
-    runs_path = os.path.join(scratch_path, "crl_runs")  
+    # scratch_path = os.getenv("SCRATCH")
+    runs_path = os.path.join("runs", "ctec_with_rept_negatives_runs")  
     os.makedirs(runs_path, exist_ok=True)
     exp_dir = os.path.join(args.model, args.env_name, args.run_name_suffix)   
     word = RandomWord().word()

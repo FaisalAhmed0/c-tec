@@ -140,8 +140,8 @@ def main(args):
     print("Num_prefill_actor_steps: ", args.num_prefill_actor_steps)
     print(f"Number of training steps per epoch: {args.num_training_steps_per_epoch}")
 
-    scratch_path = os.getenv("SCRATCH")
-    runs_path = os.path.join(scratch_path, "crl_runs")  
+    # scratch_path = os.getenv("SCRATCH")
+    runs_path = os.path.join("runs", "apt_runs")  
     os.makedirs(runs_path, exist_ok=True)
     exp_dir = os.path.join(args.model, args.env_name, args.run_name_suffix)   
     word = RandomWord().word()
@@ -240,9 +240,9 @@ def main(args):
 
 
     if args.crl_observation_dim > 0:
-        args.crl_goal_indices = jnp.arange(args.crl_observation_dim)
+        args.apt_state_indices = jnp.arange(args.crl_observation_dim)
     else:
-        args.crl_goal_indices = jnp.arange(env.state_dim) if args.use_complete_future_state else env.goal_indices
+        args.apt_state_indices = jnp.arange(env.state_dim) if args.use_complete_future_state else env.goal_indices
 
 
     if args.crl_observation_dim == 0:
@@ -585,7 +585,7 @@ def main(args):
         # 
 
         transitions = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0, None, None, None))(
-            config, env, transitions, batch_keys, args.crl_goal_indices, training_state.contrastive_params, crl_networks.critic_network.apply
+            config, env, transitions, batch_keys, args.apt_state_indices, training_state.contrastive_params, crl_networks.critic_network.apply
         )
 
         # Shuffle transitions and reshape them into (number_of_sgd_steps, batch_size, ...)

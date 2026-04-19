@@ -62,7 +62,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                 for UNROLL_LENGTH in "${UNROLL_LENGTHS[@]}"; do 
                                 for logsumexp_penalty_coeff in "${logsumexp_penalty_coeffs[@]}"; do 
                                     # Construct the sbatch command
-                                    CMD="sbatch scripts/train_ctec ctec.py \
+                                    CMD="python ctec.py \
                                         --env_name=${ENV_NAME} \
                                         ${TRACK} \
                                         ${NORMALIZE_REP} \

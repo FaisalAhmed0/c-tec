@@ -150,8 +150,8 @@ def main(args):
     run_name = f"{args.env_name}__{args.exp_name}__{args.seed}"
 
     
-    scratch_path = os.getenv("SCRATCH")
-    runs_path = os.path.join(scratch_path, "crl_runs")  
+    # scratch_path = os.getenv("SCRATCH")
+    runs_path = os.path.join("runs", "icm_runs")  
     os.makedirs(runs_path, exist_ok=True)
     exp_dir = os.path.join(args.model, args.env_name, args.run_name_suffix)   
     # /exp_dir = os.path.join(runs_path, exp_dir)  

@@ -64,7 +64,7 @@ for USE_COMPLETE_FUTURE_STATE in  "${USE_COMPLETE_FUTURE_STATE_VALUES[@]}"; do
                                 for NUM_EVALS in "${NUM_EVALS_VALUES[@]}"; do 
                                 for N_BLOCKS in "${N_BLOCKSS[@]}"; do
                                     # Construct the sbatch command
-                                    CMD="sbatch scripts/train_ctec ctec.py \
+                                    CMD="python ctec.py \
                                         --env_name=${ENV_NAME} \
                                         ${TRACK} \
                                         ${NORMALIZE_REP} \

@@ -145,8 +145,8 @@ def main(args):
     print(f"Number of training steps per epoch: {args.num_training_steps_per_epoch}")
     print(f"env_to_sgd_steps ratio={1/sgd_to_env}:1")
 
-    scratch_path = os.getenv("SCRATCH")
-    runs_path = os.path.join(scratch_path, "crl_runs")  
+    # scratch_path = os.getenv("SCRATCH")     
+    runs_path = os.path.join("runs", "ctec_runs")  
     os.makedirs(runs_path, exist_ok=True)
     exp_dir = os.path.join(args.model, args.env_name, args.run_name_suffix)   
     word = RandomWord().word()
@@ -245,9 +245,9 @@ def main(args):
 
 
     if args.crl_observation_dim > 0:
-        args.crl_goal_indices = jnp.arange(args.crl_observation_dim)
+        args.future_state_indices = jnp.arange(args.crl_observation_dim)
     else:
-        args.crl_goal_indices = jnp.arange(env.state_dim) if args.use_complete_future_state else env.goal_indices
+        args.future_state_indices = jnp.arange(env.state_dim) if args.use_complete_future_state else env.goal_indices
 
 
     if args.crl_observation_dim == 0:
@@ -469,7 +469,7 @@ def main(args):
             "actions_mean": actions_mean,
             "actions_std": actions_std,
         }
-        # import pdb;pdb.set_trace()
+        
         metrics.update(contrastive_metrics)
 
         # update the EMA
@@ -485,10 +485,8 @@ def main(args):
                 duration = 150_000_000
                 slope = (end_scale - start_scale) / duration
                 return jnp.array([slope * t + start_scale, jnp.array(end_scale)]).max()
-            # import pdb;pdb.set_trace()
-            # jax.debug.print("raining_state.env_steps {x}", x=training_state.env_steps)
+            
             new_ctec_rwd_scale = linear_schedule(training_state.env_steps)
-            # jax.debug.print("new_ctec_rwd_scale is {x}", x=new_ctec_rwd_scale)
         else:
             new_ctec_rwd_scale = training_state.ctec_rwd_scale
         
@@ -618,7 +616,7 @@ def main(args):
         # 
 
         transitions = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0, None, None, None))(
-            config, env, transitions, batch_keys, args.crl_goal_indices, training_state.contrastive_params, crl_networks.critic_network.apply
+            config, env, transitions, batch_keys, args.future_state_indices, training_state.contrastive_params, crl_networks.critic_network.apply
         )
 
         # Shuffle transitions and reshape them into (number_of_sgd_steps, batch_size, ...)
@@ -635,18 +633,6 @@ def main(args):
         crl_rewards, rms_state = crl_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key, rms_state=training_state.rms_state, rms=args.rwd_rms)
         training_state = training_state.replace(
             rms_state=rms_state)
-        # jax.debug.print("reward std is {x}", x=rms_state[-1][0])
-        # jax.debug.print("crl_rewards before scaling is {x}", x=crl_rewards[0][0])
-        # jax.debug.print("crl_rewards after scaling is {x}", x=crl_rewards[0][0]/rms_state[-1][0])
-        # if args.use_crl_task_reward:
-        #     # print("here")
-        #     from intrinsic_rewards import crl_task_reward
-        #     crl_task_rewards = crl_task_reward(crl_networks.critic_network, training_state.contrastive_params, transitions, args, key)
-        #     condition = (training_state.env_steps < args.pre_trainsteps)
-        #     rewards = crl_rewards**(condition) * crl_task_rewards**(1-condition)
-            # transitions = transitions._replace(
-            #         reward=rewards
-            #     )
         if args.usu_future_rwd:
             if args.use_crl_task_reward:
                 from intrinsic_rewards import crl_task_reward
@@ -669,8 +655,6 @@ def main(args):
                     reward=crl_rewards *  jnp.exp(transitions.reward)
                 )
             else:
-                # import pdb;pdb.set_trace()
-                # print(f"args.task_rwd_scale : {args.task_rwd_scale }")
                 transitions = transitions._replace(
                     reward=(training_state.ctec_rwd_scale * crl_rewards) + (args.task_rwd_scale * transitions.reward)
                 )
@@ -909,14 +893,14 @@ def main(args):
         )
         
         _, sample = replay_buffer.sample(new_state)
-        # import pdb;pdb.set_trace()
+        
         if args.save_replay_data:
             path = os.path.join(run_dir, "buffer_data")
             os.makedirs(path, exist_ok=True)
             save_buffer_sample(sample, path, current_step)
         from utils import visualize_ctec_reward
         if epoch in reward_visual_indices and args.visualize_reward:
-            # import pdb;pdb.set_trace()
+            
             scatter_img = visualize_ctec_reward(sample, _unpmap(training_state.contrastive_params), local_key, crl_networks.critic_network, args)
             if args.track:
                 wandb.log({"Reward_visual": wandb.Image(scatter_img)}, step=current_step)

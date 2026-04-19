@@ -15,7 +15,7 @@ def crl_reward(contrastive_network, contrastive_params, transition: Transition, 
     random_goal_mask = jax.random.bernoulli(key_critic, args.random_goals, shape=(future_state.shape[0], 1, 1))
     future_rolled = jnp.roll(future_state, 1, axis=0)
     future_state = jnp.where(random_goal_mask, future_rolled, future_state)
-    goal = future_state[:, :, args.crl_goal_indices]
+    goal = future_state[:, :, args.future_state_indices]
 
     if args.use_mono_critic:
         # TODO: figure out how to use add another function to the module and use it instead of using __call__
@@ -77,7 +77,7 @@ def crl_task_reward(contrastive_network, contrastive_params, transition: Transit
 
 
 def apt_reward(contrastive_network, contrastive_params, transition: Transition, args, key_critic):
-    state = transition.observation[:, :, args.crl_goal_indices]
+    state = transition.observation[:, :, args.apt_state_indices]
     action = transition.action * 0 # zero the action out, apt learns only state representations
 
     s_repr, _, _ = contrastive_network.apply(contrastive_params, state, action, state, key_critic, args.da, train=False)

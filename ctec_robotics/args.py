@@ -88,11 +88,11 @@ class CTEC_args:
 
     ## CRL related params
     reweigh_positives: bool = False
-    crl_goal_indices: object = None
+    future_state_indices: object = None
     crl_observation_dim: int = 0 # if > 0 use for debugging
     use_complete_future_state: bool = False
     crl_observation_dim: int = 0 # if > 0 use for debugging
-    crl_goal_indices: object = None
+    future_state_indices: object = None
     noise_std: float = 0.1
     da: bool = False
     sa_projector: bool = False
@@ -206,11 +206,11 @@ class APT_args:
     render_freq: int = 12*5
 
     ## CRL related params
-    crl_goal_indices: object = None
+    apt_state_indices: object = None
     crl_observation_dim: int = 0 # if > 0 use for debugging
     use_complete_future_state: bool = False
     crl_observation_dim: int = 0 # if > 0 use for debugging
-    crl_goal_indices: object = None
+    apt_state_indices: object = None
     noise_std: float = 0.1
     da: bool = False
     sa_projector: bool = False
