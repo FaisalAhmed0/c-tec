@@ -93,11 +93,12 @@ bash ctec_craftax/scripts/rnd_craftax.sh
 If you use this code or method, please cite the paper. Replace `author`, `year`, and `note` with the published venue and identifier when available:
 
 ```bibtex
-@misc{temporal_exploration_ctec,
-  title={{Temporal Representations for Exploration: Learning Complex Exploratory Behavior without Extrinsic Rewards}},
-  author={Anonymous},
-  year={2026},
-  url={https://sites.google.com/view/ctec-anonymous-submission},
-  note={Example anonymous project-page entry; substitute the official author list and bibliographic fields after publication.}
-}
+@inproceedings{
+        mohamed2026temporal,
+        title={Temporal Representations for Exploration: Learning Complex Exploratory Behavior without Extrinsic Rewards},
+        author={Faisal Mohamed and Catherine Ji and Benjamin Eysenbach and Glen Berseth},
+        booktitle={The Fourteenth International Conference on Learning Representations},
+        year={2026},
+        url={https://openreview.net/forum?id=KjYpHySlb0}
+        }
 ```
