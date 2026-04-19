@@ -1,9 +1,7 @@
 # Temporal Representations for Exploration (C-TeC)
 
 **Temporal Representations for Exploration: Learning Complex Exploratory Behavior without Extrinsic Rewards**
-
-Official implementation code for contrastive temporal exploration in continuous control and robotics (JAX / Flax / Brax / MuJoCo MJX). Project website with videos: [temp-contrastive-explr.github.io](https://temp-contrastive-explr.github.io/).
-
+Project website with videos: [temp-contrastive-explr.github.io](https://temp-contrastive-explr.github.io/).
 ---
 
 ## Abstract
