@@ -1,6 +1,4 @@
-# Temporal Representations for Exploration (C-TeC)
-
-**Temporal Representations for Exploration: Learning Complex Exploratory Behavior without Extrinsic Rewards**
+# Temporal Representations for Exploration: Learning Complex Exploratory Behavior without Extrinsic Rewards
 Project website with videos: [temp-contrastive-explr.github.io](https://temp-contrastive-explr.github.io/).
 ---
 
