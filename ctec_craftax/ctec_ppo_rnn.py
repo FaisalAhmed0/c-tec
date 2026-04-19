@@ -872,8 +872,8 @@ def run_ppo(config):
     rngs = jax.random.split(rng, config["NUM_REPEATS"])
 
     # create a directory for logging
-    scratch_path = os.getenv("SCRATCH")
-    runs_path = os.path.join(scratch_path, "crl_runs")  
+    # scratch_path = os.getenv("SCRATCH")
+    runs_path = os.path.join("runs", "ctec_runs")  
     os.makedirs(runs_path, exist_ok=True)
 
     exp_dir = os.path.join(config["MODEL"], config["ENV_NAME"], config["RUN_NAME_SUFFIX"])

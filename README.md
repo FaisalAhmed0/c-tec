@@ -14,7 +14,6 @@ High-level overview of this codebase (see subfolders for full file lists):
 c-tec/
 ├── environment.yml              # Conda environment specification
 ├── wrappers.py                  # Shared JAX / Brax / Gymnax-style wrappers (root helpers)
-├── train_ctec_atari             # Bash launcher for Atari-style training jobs
 ├── ctec_robotics/               # Robotics-related runs and env stubs
 │   ├── envs/manipulation/
 │   └── runs/
@@ -24,11 +23,11 @@ c-tec/
     ├── utils.py
     ├── jax_wrappers.py
     ├── wrappers.py, wrappers_v2.py
-    ├── ctec_ppo_*.py            # C-TeC PPO entry points (continuous action, RNN, …)
-    ├── ppo_rnn.py, ppo_rnn_intr_baselines.py
-    ├── etd_ppo_*.py             # Elliptical / ETD-style PPO variants
-    ├── view_ppo_agent.py
-    ├── models/                  # Actor–critic, contrastive encoder, ICM, RND, ETD heads
+    ├── ctec_ppo_rnn.py          # C-TeC PPO with RNN policy (primary C-TeC trainer)
+    ├── ppo_rnn.py               # PPO + RNN core
+    ├── ppo_rnn_intr_baselines.py   # ICM / RND / E3B / … intrinsic-reward baselines on top of PPO+RNN
+    ├── view_ppo_agent.py        # Visualization / rollout utilities
+    ├── models/                  # Actor–critic, contrastive encoder, ICM, RND, ETD components
     │   ├── actor_critic.py
     │   ├── contrastive_model.py
     │   ├── etd_models.py
@@ -37,8 +36,8 @@ c-tec/
     ├── envs/                    # Continuous control & manipulation (MuJoCo assets under assets/)
     ├── craftax/                 # Craftax pixel / symbolic environments (vendored)
     ├── logz/                    # Batched logging helpers
-    ├── scripts/                 # Short bash launchers for baseline comparisons
-    └── train_scripts/           # Larger experiment sweep scripts
+    ├── scripts/                 # Bash launchers for baseline comparisons (see scripts themselves for targets)
+    └── train_scripts/           # Larger experiment sweep scripts (Craftax + continuous-control sweeps)
 ```
 
 ## Installation
@@ -99,6 +98,6 @@ If you use this code or method, please cite the paper. Replace `author`, `year`,
         author={Faisal Mohamed and Catherine Ji and Benjamin Eysenbach and Glen Berseth},
         booktitle={The Fourteenth International Conference on Learning Representations},
         year={2026},
-        url={https://openreview.net/forum?id=KjYpHySlb0}
+        url={https://openreview.net/forum?id=KjYpHySlb0},
         }
 ```

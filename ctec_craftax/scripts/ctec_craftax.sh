@@ -46,7 +46,7 @@ for run in "${runs[@]}"; do
 ```
 echo "Submitting: repr_dim=${repr_dim}, sim=${similarity_measure}, hidden_dim=${contrastive_hidden}, gamma=${gamma_cl}, run=${run}"
 
-sbatch $script_name \
+python $script_name \
     --env_name=$env_name \
     --repr_dim=$repr_dim \
     ${normalize_reprs} \
